@@ -52,24 +52,23 @@ export function VoiceChat({ sessionId, onSessionChange, optimizationLevel }: Voi
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
   const audioPlayerRef = useRef<AudioPlayer | null>(null);
-  const pendingSessionId = useRef<string>(sessionId);
+  const [localSessionId, setLocalSessionId] = useState<string>(() => sessionId || crypto.randomUUID());
   const reconnectTimerRef = useRef<number | null>(null);
   const transcriptMessageIdRef = useRef<string | null>(null);
   const audioStatusMessageIdRef = useRef<string | null>(null);
   const pendingMessagesRef = useRef<OutgoingMessage[]>([]);
 
-  const stableSessionId = useMemo(() => {
-    if (sessionId && sessionId !== pendingSessionId.current) {
-      pendingSessionId.current = sessionId;
-      return sessionId;
+  useEffect(() => {
+    if (sessionId && sessionId !== localSessionId) {
+      setLocalSessionId(sessionId);
     }
+  }, [sessionId, localSessionId]);
 
-    if (!pendingSessionId.current) {
-      pendingSessionId.current = crypto.randomUUID();
-      onSessionChange(pendingSessionId.current);
-    }
-    return pendingSessionId.current;
-  }, [sessionId, onSessionChange]);
+  useEffect(() => {
+    onSessionChange(localSessionId);
+  }, [localSessionId, onSessionChange]);
+
+  const stableSessionId = useMemo(() => localSessionId, [localSessionId]);
 
   const ensureRecorder = useCallback(() => {
     if (!recorderRef.current) {
@@ -214,8 +213,7 @@ export function VoiceChat({ sessionId, onSessionChange, optimizationLevel }: Voi
     (event: MessageEvent<string>) => {
       const data = JSON.parse(event.data) as IncomingMessage;
       if (data.type === 'session') {
-        pendingSessionId.current = data.sessionId;
-        onSessionChange(data.sessionId);
+        setLocalSessionId(data.sessionId);
         return;
       }
 
