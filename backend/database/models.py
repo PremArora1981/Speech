@@ -67,7 +67,7 @@ class TelephonyTrunk(Base):
     direction = Column(String, nullable=False)  # inbound | outbound
     sip_uri = Column(String, nullable=False)
     transport = Column(String, nullable=True)
-    metadata = Column(JSON, default=dict)
+    meta_data = Column(JSON, default=dict)
     credential_ref = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -96,7 +96,7 @@ class GuardrailViolation(Base):
     input_text = Column(Text, nullable=True)  # Sanitized input that triggered violation
     output_text = Column(Text, nullable=True)  # Sanitized output that triggered violation
     safe_response = Column(Text, nullable=True)  # Safe fallback response provided
-    metadata = Column(JSON, default=dict)  # Additional context
+    meta_data = Column(JSON, default=dict)  # Additional context
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
@@ -121,7 +121,7 @@ class CostEntry(Base):
     cost_usd = Column(Numeric(10, 6), nullable=False)  # Precise decimal cost
     optimization_level = Column(String(32), nullable=True)
     cached = Column(Boolean, default=False)  # Was this a cache hit?
-    metadata = Column(JSON, default=dict)  # Additional metadata (model, latency, etc.)
+    meta_data = Column(JSON, default=dict)  # Additional metadata (model, latency, etc.)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
@@ -213,7 +213,7 @@ class UserFeedback(Base):
     # Context
     user_input = Column(Text, nullable=True)
     assistant_response = Column(Text, nullable=True)
-    metadata = Column(JSON, default=dict)
+    meta_data = Column(JSON, default=dict)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 

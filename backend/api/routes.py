@@ -22,7 +22,7 @@ from backend.database.repositories import (
 from .dependencies import require_api_key
 import json
 
-router = APIRouter(prefix="/api/v1", dependencies=[Depends(require_api_key)])
+router = APIRouter(prefix="/api/v1")  # Remove global dependency - apply per-route instead
 
 
 def get_pipeline() -> ConversationPipeline:
@@ -34,7 +34,17 @@ def get_telephony_adapter() -> TelephonyAdapter:
 
 
 @router.websocket("/voice-session")
-async def voice_session(websocket: WebSocket, pipeline: ConversationPipeline = Depends(get_pipeline)):
+async def voice_session(
+    websocket: WebSocket,
+    pipeline: ConversationPipeline = Depends(get_pipeline),
+    api_key: str = None
+):
+    # Validate API key from query parameter (WebSocket can't use headers)
+    from backend.config.settings import settings
+    if api_key != settings.api_key:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     await websocket.accept()
     optimization_level: str | None = None
     target_language: str = "hi-IN"  # Default target language
@@ -90,7 +100,7 @@ async def voice_session(websocket: WebSocket, pipeline: ConversationPipeline = D
         await websocket.close()
 
 
-@router.post("/telephony/calls")
+@router.post("/telephony/calls", dependencies=[Depends(require_api_key)])
 async def create_outbound_call(payload: dict, adapter: TelephonyAdapter = Depends(get_telephony_adapter)) -> JSONResponse:
     request = SIPParticipantRequest(
         trunk_id=payload["trunk_id"],
@@ -103,13 +113,13 @@ async def create_outbound_call(payload: dict, adapter: TelephonyAdapter = Depend
     return JSONResponse({"status": "call_initiated"})
 
 
-@router.get("/telephony/trunks")
+@router.get("/telephony/trunks", dependencies=[Depends(require_api_key)])
 async def list_trunks(adapter: TelephonyAdapter = Depends(get_telephony_adapter)) -> JSONResponse:
     trunks = await adapter.list_trunks()
     return JSONResponse({"trunks": [trunk.__dict__ for trunk in trunks]})
 
 
-@router.post("/telephony/trunks")
+@router.post("/telephony/trunks", dependencies=[Depends(require_api_key)])
 async def register_trunk(payload: dict, adapter: TelephonyAdapter = Depends(get_telephony_adapter)) -> JSONResponse:
     registration = TelephonyTrunkRegistration(
         provider=payload["provider"],
@@ -124,7 +134,7 @@ async def register_trunk(payload: dict, adapter: TelephonyAdapter = Depends(get_
     return JSONResponse({"trunk": trunk.__dict__}, status_code=status.HTTP_201_CREATED)
 
 
-@router.get("/health")
+@router.get("/health")  # No API key required for health check
 async def health_check() -> JSONResponse:
     return JSONResponse({"status": "ok"}, status_code=status.HTTP_200_OK)
 
@@ -149,7 +159,7 @@ class FeedbackRequest(BaseModel):
 
 # Analytics & Monitoring Endpoints
 
-@router.get("/sessions/{session_id}/costs")
+@router.get("/sessions/{session_id}/costs", dependencies=[Depends(require_api_key)])
 async def get_session_costs(session_id: str, db: Session = Depends(get_db)) -> JSONResponse:
     """Get cost summary for a session."""
     cost_repo = CostEntryRepository(db)
@@ -207,7 +217,7 @@ async def get_session_costs(session_id: str, db: Session = Depends(get_db)) -> J
     })
 
 
-@router.get("/sessions/{session_id}/metrics")
+@router.get("/sessions/{session_id}/metrics", dependencies=[Depends(require_api_key)])
 async def get_session_metrics(session_id: str, db: Session = Depends(get_db)) -> JSONResponse:
     """Get aggregated metrics for a session."""
     metrics_repo = SessionMetricsRepository(db)
@@ -238,7 +248,7 @@ async def get_session_metrics(session_id: str, db: Session = Depends(get_db)) ->
     })
 
 
-@router.post("/feedback")
+@router.post("/feedback", dependencies=[Depends(require_api_key)])
 async def submit_feedback(request: FeedbackRequest, db: Session = Depends(get_db)) -> JSONResponse:
     """Submit user feedback for a conversation turn."""
     feedback_repo = UserFeedbackRepository(db)
