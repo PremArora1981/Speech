@@ -1,11 +1,105 @@
 """Application settings and configuration management."""
 
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Literal, Optional
 
 from pydantic import AnyHttpUrl, Field
 from pydantic.functional_validators import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+@dataclass
+class OptimizationConfig:
+    """Configuration for a specific optimization level."""
+
+    level: str
+    target_latency_ms: tuple[int, int]  # (min, max)
+    expected_accuracy: float
+    streaming_enabled: bool
+    streaming_confidence_threshold: float
+    speculation_enabled: bool
+    speculation_word_threshold: int
+    parallel_execution: bool
+    rag_top_k: int
+    llm_temperature: float
+    response_max_tokens: Optional[int]
+    enable_shortcuts: bool
+
+
+# Optimization level configurations based on Requirements_v2.txt
+OPTIMIZATION_CONFIGS = {
+    "quality": OptimizationConfig(
+        level="quality",
+        target_latency_ms=(3000, 4000),
+        expected_accuracy=0.98,
+        streaming_enabled=False,
+        streaming_confidence_threshold=1.0,
+        speculation_enabled=False,
+        speculation_word_threshold=999,
+        parallel_execution=False,
+        rag_top_k=10,
+        llm_temperature=0.3,
+        response_max_tokens=None,
+        enable_shortcuts=False,
+    ),
+    "balanced_quality": OptimizationConfig(
+        level="balanced_quality",
+        target_latency_ms=(2000, 3000),
+        expected_accuracy=0.95,
+        streaming_enabled=False,
+        streaming_confidence_threshold=1.0,
+        speculation_enabled=False,
+        speculation_word_threshold=999,
+        parallel_execution=True,
+        rag_top_k=5,
+        llm_temperature=0.5,
+        response_max_tokens=None,
+        enable_shortcuts=False,
+    ),
+    "balanced": OptimizationConfig(
+        level="balanced",
+        target_latency_ms=(1500, 2000),
+        expected_accuracy=0.90,
+        streaming_enabled=True,
+        streaming_confidence_threshold=0.80,
+        speculation_enabled=True,
+        speculation_word_threshold=5,
+        parallel_execution=True,
+        rag_top_k=3,
+        llm_temperature=0.7,
+        response_max_tokens=None,
+        enable_shortcuts=False,
+    ),
+    "balanced_speed": OptimizationConfig(
+        level="balanced_speed",
+        target_latency_ms=(1000, 1500),
+        expected_accuracy=0.85,
+        streaming_enabled=True,
+        streaming_confidence_threshold=0.60,
+        speculation_enabled=True,
+        speculation_word_threshold=3,
+        parallel_execution=True,
+        rag_top_k=2,
+        llm_temperature=0.8,
+        response_max_tokens=None,
+        enable_shortcuts=True,
+    ),
+    "speed": OptimizationConfig(
+        level="speed",
+        target_latency_ms=(700, 1000),
+        expected_accuracy=0.75,
+        streaming_enabled=True,
+        streaming_confidence_threshold=0.40,
+        speculation_enabled=True,
+        speculation_word_threshold=2,
+        parallel_execution=True,
+        rag_top_k=0,  # Skip RAG
+        llm_temperature=0.9,
+        response_max_tokens=50,  # Truncate for speed
+        enable_shortcuts=True,
+    ),
+}
 
 
 class Settings(BaseSettings):
@@ -116,5 +210,18 @@ def get_settings() -> Settings:
 
 settings = get_settings()
 
-__all__ = ["Settings", "settings", "get_settings"]
+
+def get_optimization_config(level: str) -> OptimizationConfig:
+    """Get optimization configuration for a given level."""
+    return OPTIMIZATION_CONFIGS.get(level, OPTIMIZATION_CONFIGS["balanced"])
+
+
+__all__ = [
+    "Settings",
+    "settings",
+    "get_settings",
+    "OptimizationConfig",
+    "OPTIMIZATION_CONFIGS",
+    "get_optimization_config",
+]
 

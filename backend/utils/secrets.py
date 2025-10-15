@@ -26,3 +26,5 @@ def decrypt_secret(value: str) -> str:
     return cipher.decrypt(value.encode("utf-8")).decode("utf-8")
 
 
+
+

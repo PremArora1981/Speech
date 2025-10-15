@@ -10,6 +10,8 @@ from typing import Any, Dict, Optional, Tuple
 from backend.clients import ElevenLabsTTSClient, SarvamTTSClient
 from backend.config.settings import settings
 from backend.schemas import SynthesizeRequest, SynthesizeResponse, TTSMetadata
+from backend.services.interrupt_manager import InterruptManager, InterruptibleOperation
+from backend.services.cost_tracker import CostTracker
 from backend.utils import (
     TTSCache,
     VOICE_REGISTRY,
@@ -37,6 +39,8 @@ class TTSOrchestrator:
         elevenlabs_client: Optional[ElevenLabsTTSClient] = None,
         voice_registry: Optional[VoiceRegistry] = None,
         cache: Optional[TTSCache] = None,
+        interrupt_manager: Optional[InterruptManager] = None,
+        cost_tracker: Optional[CostTracker] = None,
     ) -> None:
         self.sarvam_client = sarvam_client or SarvamTTSClient()
         self.elevenlabs_client = elevenlabs_client
@@ -44,9 +48,49 @@ class TTSOrchestrator:
         self.cache = cache or (
             TTSCache(settings.redis_url) if settings.redis_url else None
         )
+        self.interrupt_manager = interrupt_manager
+        self.cost_tracker = cost_tracker
 
-    async def synthesize(self, request: SynthesizeRequest) -> SynthesizeResponse:
-        """Generate speech audio for the provided request."""
+    async def synthesize(
+        self,
+        request: SynthesizeRequest,
+        session_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+    ) -> SynthesizeResponse:
+        """
+        Generate speech audio for the provided request.
+
+        Args:
+            request: TTS synthesis request
+            session_id: Optional session ID for interrupt tracking
+            turn_id: Optional turn ID for interrupt tracking
+
+        Returns:
+            SynthesizeResponse with audio and metadata
+
+        Raises:
+            InterruptedError: If operation is interrupted
+        """
+        # Use interruptible operation if manager and IDs provided
+        if self.interrupt_manager and session_id and turn_id:
+            async with InterruptibleOperation(
+                self.interrupt_manager, session_id, turn_id, "tts"
+            ) as op:
+                return await self._synthesize_internal(request, session_id, turn_id, op)
+        else:
+            return await self._synthesize_internal(request, session_id, turn_id)
+
+    async def _synthesize_internal(
+        self,
+        request: SynthesizeRequest,
+        session_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+        op: Optional[InterruptibleOperation] = None,
+    ) -> SynthesizeResponse:
+        """Internal synthesis logic with optional interrupt checking."""
+        # Check for interrupt at the start
+        if op:
+            op.check_or_raise()
 
         voice_entry, provider, fallback_source = self._resolve_voice(request)
 
@@ -73,14 +117,18 @@ class TTSOrchestrator:
                     metadata=metadata,
                 )
 
+        # Check for interrupt after cache check
+        if op:
+            op.check_or_raise()
+
         try:
             if provider == "elevenlabs":
                 response, payload, codec = await self._synthesize_elevenlabs(
-                    request, voice_entry
+                    request, voice_entry, op
                 )
             else:
                 response, payload, codec = await self._synthesize_sarvam(
-                    request, voice_entry
+                    request, voice_entry, op
                 )
         except Exception as exc:  # noqa: BLE001
             metrics["tts_failures_total"].labels(provider=provider, reason=exc.__class__.__name__).inc()
@@ -90,7 +138,7 @@ class TTSOrchestrator:
                 fallback_entry = self._find_fallback_voice(request.language_code)
                 if fallback_entry:
                     response, payload, codec = await self._synthesize_sarvam(
-                        request, fallback_entry
+                        request, fallback_entry, op
                     )
                     provider = "sarvam"
                     voice_entry = fallback_entry
@@ -130,6 +178,21 @@ class TTSOrchestrator:
                 ttl=self._ttl_for_level(request.optimization_level),
             )
 
+        # Track cost if tracker is configured (only for non-cached responses)
+        if self.cost_tracker and not metadata.cached:
+            await self.cost_tracker.track_tts(
+                provider=provider,
+                characters=len(request.text),
+                voice_id=voice_entry.voice_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                metadata={
+                    "language_code": request.language_code,
+                    "optimization_level": request.optimization_level,
+                    "latency_ms": response.latency_ms,
+                },
+            )
+
         return SynthesizeResponse(
             audio_b64=response.audio_b64,
             mime_type=self._infer_mime_type(metadata.audio_codec),
@@ -137,12 +200,25 @@ class TTSOrchestrator:
         )
 
     async def _synthesize_sarvam(
-        self, request: SynthesizeRequest, voice_entry: VoiceEntry
+        self,
+        request: SynthesizeRequest,
+        voice_entry: VoiceEntry,
+        op: Optional[InterruptibleOperation] = None,
     ) -> Tuple["TTSResponse", Dict[str, Any], str]:
+        """Synthesize with Sarvam with optional interrupt checking."""
+        # Check for interrupt before API call
+        if op:
+            op.check_or_raise()
+
         payload = self._build_sarvam_payload(request, voice_entry.voice_id)
         start = time.perf_counter_ns()
         response = await self.sarvam_client.convert(payload)
         latency_ms = int((time.perf_counter_ns() - start) / 1_000_000)
+
+        # Check for interrupt after API call
+        if op:
+            op.check_or_raise()
+
         audio_b64 = self._extract_audio(response)
         return TTSResponse(
             audio_b64=audio_b64,
@@ -152,8 +228,16 @@ class TTSOrchestrator:
         ), payload, payload.get("output_audio_codec", settings.default_audio_codec)
 
     async def _synthesize_elevenlabs(
-        self, request: SynthesizeRequest, voice_entry: VoiceEntry
+        self,
+        request: SynthesizeRequest,
+        voice_entry: VoiceEntry,
+        op: Optional[InterruptibleOperation] = None,
     ) -> Tuple["TTSResponse", Dict[str, Any], str]:
+        """Synthesize with ElevenLabs with optional interrupt checking."""
+        # Check for interrupt before API call
+        if op:
+            op.check_or_raise()
+
         if not self.elevenlabs_client:
             self.elevenlabs_client = ElevenLabsTTSClient()
 
@@ -161,6 +245,10 @@ class TTSOrchestrator:
         start = time.perf_counter_ns()
         response = await self.elevenlabs_client.convert(payload)
         latency_ms = int((time.perf_counter_ns() - start) / 1_000_000)
+
+        # Check for interrupt after API call
+        if op:
+            op.check_or_raise()
 
         # ElevenLabs returns base64 audio under the key "audio" in streaming responses,
         # but for synchronous generation we expect "audio" field in the response.

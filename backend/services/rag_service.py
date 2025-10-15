@@ -8,7 +8,7 @@ import weaviate
 from weaviate.auth import AuthApiKey
 from openai import AsyncOpenAI
 
-from backend.config.settings import settings
+from backend.config.settings import settings, get_optimization_config
 from backend.database import SessionLocal
 from backend.database.repositories import DocumentRepository
 from backend.ingestion.url_ingestor import IngestionResult, URLIngestor
@@ -67,7 +67,32 @@ class RAGService:
         )
         return [item.embedding for item in response.data]
 
-    def retrieve(self, query: str, top_k: int = 5) -> List[str]:
+    def retrieve(
+        self, query: str, top_k: Optional[int] = None, optimization_level: Optional[str] = None
+    ) -> List[str]:
+        """
+        Retrieve relevant context chunks for a query.
+
+        Args:
+            query: The search query
+            top_k: Number of chunks to retrieve (overrides optimization level)
+            optimization_level: Optimization level (quality/balanced_quality/balanced/balanced_speed/speed)
+
+        Returns:
+            List of relevant text chunks
+        """
+        # Determine top_k based on optimization level if not explicitly provided
+        if top_k is None:
+            if optimization_level:
+                config = get_optimization_config(optimization_level)
+                top_k = config.rag_top_k
+            else:
+                top_k = 5  # Default
+
+        # Skip RAG entirely if top_k is 0 (speed optimization)
+        if top_k == 0:
+            return []
+
         result = (
             self.client.query.get("DocumentChunk", ["text", "source_url"])
             .with_near_text({"concepts": [query]})
