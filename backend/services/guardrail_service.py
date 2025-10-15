@@ -6,6 +6,10 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional
 
+from backend.database import SessionLocal
+from backend.database.repositories import GuardrailRepository
+from backend.utils.logging import get_logger
+
 
 @dataclass
 class GuardrailViolation:
@@ -72,9 +76,17 @@ class GuardrailService:
         "email": re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"),
     }
 
-    def __init__(self, enabled: bool = True):
-        """Initialize guardrail service."""
+    def __init__(self, enabled: bool = True, enable_db_logging: bool = True):
+        """
+        Initialize guardrail service.
+
+        Args:
+            enabled: Whether guardrails are enabled
+            enable_db_logging: Whether to log violations to database
+        """
         self.enabled = enabled
+        self.enable_db_logging = enable_db_logging
+        self.logger = get_logger(__name__)
 
     def check_input(self, user_input: str) -> GuardrailResult:
         """
@@ -226,14 +238,59 @@ Is there something else I can help you with?"
 
         Args:
             violation: The detected violation
-            context: Additional context (user_id, session_id, etc.)
+            context: Additional context (session_id, turn_id, input_text, output_text, etc.)
         """
-        # TODO: Implement logging to database/monitoring system
-        # This would typically write to guardrail_violations table
-        print(
-            f"[GUARDRAIL VIOLATION] {violation.layer} - {violation.rule_type}: "
-            f"{violation.message} | Context: {context}"
+        # Log to console for immediate visibility
+        self.logger.warning(
+            f"Guardrail violation detected: {violation.layer} - {violation.rule_type}",
+            extra={
+                "violation": {
+                    "layer": violation.layer,
+                    "rule_type": violation.rule_type,
+                    "severity": violation.severity,
+                    "message": violation.message,
+                    "blocked": violation.blocked,
+                },
+                "context": context,
+            },
         )
+
+        # Persist to database if enabled
+        if self.enable_db_logging:
+            try:
+                with SessionLocal() as db:
+                    guardrail_repo = GuardrailRepository(db)
+
+                    # Map layer string to layer number
+                    layer_map = {"pre_llm": 1, "llm_prompt": 2, "post_llm": 3}
+                    layer_num = layer_map.get(violation.layer, 0)
+
+                    guardrail_repo.log_violation(
+                        violation_type=violation.rule_type,
+                        layer=layer_num,
+                        violated_rule=violation.message,
+                        session_id=context.get("session_id"),
+                        turn_id=context.get("turn_id"),
+                        severity=violation.severity,
+                        input_text=context.get("input_text"),
+                        output_text=context.get("output_text"),
+                        safe_response=context.get("safe_response"),
+                        metadata={
+                            "blocked": violation.blocked,
+                            "layer_name": violation.layer,
+                            **{k: v for k, v in context.items() if k not in ["session_id", "turn_id", "input_text", "output_text", "safe_response"]},
+                        },
+                    )
+
+                    self.logger.debug(
+                        "Guardrail violation logged to database",
+                        extra={"session_id": context.get("session_id"), "turn_id": context.get("turn_id")},
+                    )
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to log guardrail violation to database: {e}",
+                    extra={"error": str(e), "session_id": context.get("session_id")},
+                )
 
 
 __all__ = ["GuardrailService", "GuardrailResult", "GuardrailViolation"]

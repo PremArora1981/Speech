@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -13,7 +14,8 @@ from backend.services.translation_service import TranslationService, Translation
 from backend.services.tts_service import TTSOrchestrator
 from backend.services.interrupt_manager import InterruptManager, InterruptReason
 from backend.services.cost_tracker import CostTracker
-from backend.database.repositories import SessionRepository
+from backend.database.repositories import SessionRepository, SessionMetricsRepository, GuardrailRepository
+from backend.database import SessionLocal
 from backend.services.rag_service import RAGService
 from backend.utils.logging import get_logger, log_with_context
 
@@ -71,15 +73,90 @@ class ConversationPipeline:
         session_id: str | None,
         timestamp: float | None,
         optimization_level: str | None,
+        target_language: str = "hi-IN",
+        translation_config: Optional[TranslationConfig] = None,
     ) -> ConversationTurn | None:
+        """
+        Process a base64-encoded audio chunk through the full pipeline.
+
+        Args:
+            audio_base64: Base64-encoded audio data
+            session_id: Session identifier
+            timestamp: Timestamp of audio chunk
+            optimization_level: Optimization level (quality/balanced/speed)
+            target_language: Target language for translation
+            translation_config: Optional translation configuration
+
+        Returns:
+            ConversationTurn with complete response, or None if no audio provided
+
+        Raises:
+            InterruptedError: If turn is interrupted during processing
+        """
         if not audio_base64:
             return None
-        # TODO: decode audio, stream through ASR/LLM/Translation/TTS respecting optimization level
+
         self.logger.debug(
             "Received audio chunk",
             extra={"session_id": session_id, "optimization_level": optimization_level, "timestamp": timestamp},
         )
-        return None
+
+        # Decode base64 audio and save to temporary file
+        import base64
+        import tempfile
+        import os
+
+        temp_file_path = None
+        try:
+            # Remove data URL prefix if present (e.g., "data:audio/wav;base64,")
+            if "," in audio_base64:
+                audio_base64 = audio_base64.split(",", 1)[1]
+
+            # Decode base64 to bytes
+            audio_bytes = base64.b64decode(audio_base64)
+
+            # Save to temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
+                temp_file.write(audio_bytes)
+                temp_file_path = temp_file.name
+
+            self.logger.debug(
+                "Audio chunk decoded and saved",
+                extra={"session_id": session_id, "file_size": len(audio_bytes), "temp_path": temp_file_path},
+            )
+
+            # Process through full pipeline using existing process_audio method
+            result = await self.process_audio(
+                audio_url=temp_file_path,
+                target_language=target_language,
+                translation_config=translation_config,
+                session_id=session_id,
+                optimization_level=optimization_level,
+            )
+
+            return result
+
+        except Exception as e:
+            self.logger.error(
+                "Failed to process audio chunk",
+                extra={"session_id": session_id, "error": str(e)},
+            )
+            raise
+
+        finally:
+            # Clean up temporary file
+            try:
+                if temp_file_path and os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+                    self.logger.debug(
+                        "Temporary audio file cleaned up",
+                        extra={"session_id": session_id, "temp_path": temp_file_path},
+                    )
+            except Exception as cleanup_error:
+                self.logger.warning(
+                    "Failed to clean up temporary file",
+                    extra={"session_id": session_id, "error": str(cleanup_error)},
+                )
 
     async def finish_session(self, session_id: str | None, optimization_level: str | None) -> None:
         self.logger.info("Voice session finished", extra={"session_id": session_id, "optimization_level": optimization_level})
@@ -146,14 +223,21 @@ class ConversationPipeline:
         if session_id:
             turn_id = self.interrupt_manager.start_turn(session_id, turn_id)
 
+        # Track latencies
+        start_time = time.time()
+        asr_latency = llm_latency = translation_latency = tts_latency = None
+
         try:
             # Step 1: ASR - Transcribe audio
+            asr_start = time.time()
             transcript = await self.asr_service.transcribe(
                 audio_url, session_id=session_id, turn_id=turn_id
             )
+            asr_latency = (time.time() - asr_start) * 1000  # Convert to ms
             request_id = session_id or "anonymous"
             log_with_context(
-                self.logger, request_id, logging.INFO, "ASR complete", text=transcript.text
+                self.logger, request_id, logging.INFO, "ASR complete",
+                text=transcript.text, latency_ms=asr_latency
             )
 
             # Step 2: RAG - Retrieve context (optimization-level aware)
@@ -173,6 +257,7 @@ class ConversationPipeline:
                     )
 
             # Step 3: LLM - Generate response (with guardrails and optimization + interrupts)
+            llm_start = time.time()
             llm = await self.llm_service.generate(
                 transcript.text,
                 rag_context=rag_context,
@@ -180,15 +265,18 @@ class ConversationPipeline:
                 session_id=session_id,
                 turn_id=turn_id,
             )
+            llm_latency = (time.time() - llm_start) * 1000  # Convert to ms
             log_with_context(
                 self.logger,
                 request_id,
                 logging.INFO,
                 "LLM complete",
                 safe=llm.guardrail_flags.safe,
+                latency_ms=llm_latency
             )
 
             # Step 4: Translation - Translate to target language
+            translation_start = time.time()
             translated = await self.translation_service.translate(
                 llm.text,
                 source_language="en-IN",
@@ -197,11 +285,14 @@ class ConversationPipeline:
                 session_id=session_id,
                 turn_id=turn_id,
             )
+            translation_latency = (time.time() - translation_start) * 1000  # Convert to ms
             log_with_context(
-                self.logger, request_id, logging.INFO, "Translation complete"
+                self.logger, request_id, logging.INFO, "Translation complete",
+                latency_ms=translation_latency
             )
 
             # Step 5: TTS - Synthesize speech (with interrupts)
+            tts_start = time.time()
             tts_response = await self.tts_orchestrator.synthesize(
                 request=self._build_tts_request(
                     translated, target_language, optimization_level
@@ -209,7 +300,9 @@ class ConversationPipeline:
                 session_id=session_id,
                 turn_id=turn_id,
             )
-            log_with_context(self.logger, request_id, logging.INFO, "TTS complete")
+            tts_latency = (time.time() - tts_start) * 1000  # Convert to ms
+            log_with_context(self.logger, request_id, logging.INFO, "TTS complete",
+                latency_ms=tts_latency)
 
             # Store in session repository if available
             if self.session_repository and session_id:
@@ -225,6 +318,55 @@ class ConversationPipeline:
                         "turn_id": turn_id,
                     },
                 )
+
+            # Update session metrics in database
+            if session_id:
+                try:
+                    with SessionLocal() as db:
+                        metrics_repo = SessionMetricsRepository(db)
+
+                        # Update turn count - successful
+                        metrics = metrics_repo.get_or_create(session_id)
+                        metrics.total_turns += 1
+                        metrics.successful_turns += 1
+
+                        # Update latencies (running averages)
+                        if asr_latency:
+                            metrics.avg_asr_latency_ms = self._update_avg(
+                                metrics.avg_asr_latency_ms, asr_latency, metrics.successful_turns
+                            )
+                        if llm_latency:
+                            metrics.avg_llm_latency_ms = self._update_avg(
+                                metrics.avg_llm_latency_ms, llm_latency, metrics.successful_turns
+                            )
+                        if translation_latency:
+                            metrics.avg_translation_latency_ms = self._update_avg(
+                                metrics.avg_translation_latency_ms, translation_latency, metrics.successful_turns
+                            )
+                        if tts_latency:
+                            metrics.avg_tts_latency_ms = self._update_avg(
+                                metrics.avg_tts_latency_ms, tts_latency, metrics.successful_turns
+                            )
+
+                        # Update total latency
+                        total_latency = (asr_latency or 0) + (llm_latency or 0) + (translation_latency or 0) + (tts_latency or 0)
+                        metrics.avg_total_latency_ms = self._update_avg(
+                            metrics.avg_total_latency_ms, total_latency, metrics.successful_turns
+                        )
+
+                        # Track guardrail violations if any
+                        if not llm.guardrail_flags.safe:
+                            metrics.guardrail_violations += 1
+                            if llm.guardrail_flags.reason:
+                                metrics.guardrail_blocks += 1
+
+                        # Update optimization level
+                        if optimization_level:
+                            metrics.optimization_level = optimization_level
+
+                        db.commit()
+                except Exception as e:
+                    self.logger.error(f"Failed to update session metrics: {e}")
 
             return ConversationTurn(
                 transcript=transcript,
@@ -243,12 +385,57 @@ class ConversationPipeline:
                     "error": str(e),
                 },
             )
+
+            # Update metrics for interrupted turn
+            if session_id:
+                try:
+                    with SessionLocal() as db:
+                        metrics_repo = SessionMetricsRepository(db)
+                        metrics = metrics_repo.get_or_create(session_id)
+                        metrics.total_turns += 1
+                        metrics.interrupted_turns += 1
+                        db.commit()
+                except Exception as metrics_error:
+                    self.logger.error(f"Failed to update interrupted turn metrics: {metrics_error}")
+
+            raise
+
+        except Exception as e:
+            # Turn failed, log and update metrics
+            self.logger.error(
+                "Turn processing failed",
+                extra={
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "error": str(e),
+                },
+            )
+
+            # Update metrics for failed turn
+            if session_id:
+                try:
+                    with SessionLocal() as db:
+                        metrics_repo = SessionMetricsRepository(db)
+                        metrics = metrics_repo.get_or_create(session_id)
+                        metrics.total_turns += 1
+                        metrics.failed_turns += 1
+                        db.commit()
+                except Exception as metrics_error:
+                    self.logger.error(f"Failed to update failed turn metrics: {metrics_error}")
+
             raise
 
         finally:
             # Clean up turn tracking
             if session_id and turn_id:
                 self.interrupt_manager.finish_turn(session_id, turn_id)
+
+    def _update_avg(self, current_avg: Optional[float], new_value: float, count: int) -> float:
+        """Update running average with new value."""
+        if current_avg is None or count == 1:
+            return new_value
+        # Running average formula: new_avg = ((old_avg * (n-1)) + new_value) / n
+        return ((current_avg * (count - 1)) + new_value) / count
 
     def _build_tts_request(
         self, text: str, language: str, optimization_level: Optional[str] = None

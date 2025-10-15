@@ -158,6 +158,18 @@ class LLMService:
         # Layer 1: Pre-LLM guardrail check
         input_check = self.guardrail_service.check_input(transcript)
         if not input_check.passed:
+            # Log violations to database
+            for violation in input_check.violations:
+                self.guardrail_service.log_violation(
+                    violation,
+                    context={
+                        "session_id": session_id,
+                        "turn_id": turn_id,
+                        "input_text": transcript,
+                        "safe_response": input_check.safe_response,
+                    },
+                )
+
             # Input blocked by guardrails
             return LLMResponse(
                 text=input_check.safe_response or "I cannot process this request.",
@@ -214,6 +226,19 @@ class LLMService:
         # Layer 3: Post-LLM guardrail check
         output_check = self.guardrail_service.check_output(text)
         if not output_check.passed:
+            # Log violations to database
+            for violation in output_check.violations:
+                self.guardrail_service.log_violation(
+                    violation,
+                    context={
+                        "session_id": session_id,
+                        "turn_id": turn_id,
+                        "input_text": transcript,
+                        "output_text": text,
+                        "safe_response": output_check.safe_response,
+                    },
+                )
+
             # Response blocked by guardrails
             return LLMResponse(
                 text=output_check.safe_response or "I cannot provide that information.",

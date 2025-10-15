@@ -14,6 +14,8 @@ except ImportError:  # pragma: no cover
     aioredis = None
 
 from backend.utils.logging import get_logger
+from backend.database import SessionLocal
+from backend.database.repositories import CostEntryRepository
 
 
 @dataclass
@@ -146,6 +148,7 @@ class CostTracker:
         redis_url: Optional[str] = None,
         pricing: Optional[Dict] = None,
         enable_persistence: bool = True,
+        enable_db_persistence: bool = True,
     ) -> None:
         """
         Initialize cost tracker.
@@ -154,10 +157,12 @@ class CostTracker:
             redis_url: Redis URL for persistent storage
             pricing: Custom pricing model (overrides defaults)
             enable_persistence: Whether to persist to Redis
+            enable_db_persistence: Whether to persist to database
         """
         self.redis_url = redis_url
         self.pricing = pricing or self.DEFAULT_PRICING
         self.enable_persistence = enable_persistence and redis_url is not None
+        self.enable_db_persistence = enable_db_persistence
         self._redis = None
         self.logger = get_logger(__name__)
 
@@ -380,6 +385,10 @@ class CostTracker:
         if self.enable_persistence:
             await self._persist_entry(entry)
 
+        # Persist to database if enabled
+        if self.enable_db_persistence:
+            await self._persist_to_db(entry)
+
         self.logger.debug(
             f"Tracked {entry.service} cost",
             extra={
@@ -413,6 +422,27 @@ class CostTracker:
             global_key,
             {entry_key: entry.timestamp.timestamp()}
         )
+
+    async def _persist_to_db(self, entry: CostEntry) -> None:
+        """Persist entry to database."""
+        try:
+            with SessionLocal() as db:
+                cost_repo = CostEntryRepository(db)
+                cost_repo.log_cost(
+                    service=entry.service,
+                    provider=entry.provider,
+                    operation=entry.operation,
+                    units=entry.units,
+                    unit_type=entry.unit_type,
+                    cost_usd=float(entry.cost_usd),
+                    session_id=entry.session_id,
+                    turn_id=entry.turn_id,
+                    optimization_level=entry.metadata.get("optimization_level"),
+                    cached=entry.metadata.get("cached", False),
+                    metadata=entry.metadata,
+                )
+        except Exception as e:
+            self.logger.error(f"Failed to persist cost to database: {e}")
 
     async def get_session_summary(self, session_id: str) -> CostSummary:
         """
