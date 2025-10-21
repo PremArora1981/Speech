@@ -273,3 +273,124 @@ export async function deleteSystemPrompt(id: string): Promise<void> {
   );
 }
 
+// Session Configuration API
+
+export type SessionConfiguration = {
+  id: string;
+  name: string;
+  user_id?: string;
+  llm_provider: string;
+  llm_model: string;
+  tts_provider: string;
+  tts_voice_id: string;
+  voice_tuning?: VoiceTuning;
+  system_prompt_id?: string;
+  system_prompt_text?: string;
+  optimization_level: string;
+  target_language: string;
+  enable_rag: boolean;
+  is_default: boolean;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function fetchSessionConfigurations(params?: {
+  user_id?: string;
+}): Promise<SessionConfiguration[]> {
+  const response = await axios.get(
+    `${appConfig.restTtsUrl.replace('/api/v1/tts', '')}/api/v1/config/sessions`,
+    {
+      headers: { 'X-API-Key': appConfig.apiKey },
+      params,
+    },
+  );
+  return response.data.configs;
+}
+
+export async function fetchSessionConfiguration(id: string): Promise<SessionConfiguration> {
+  const response = await axios.get(
+    `${appConfig.restTtsUrl.replace('/api/v1/tts', '')}/api/v1/config/sessions/${id}`,
+    {
+      headers: { 'X-API-Key': appConfig.apiKey },
+    },
+  );
+  return response.data;
+}
+
+export async function fetchDefaultSessionConfiguration(params?: {
+  user_id?: string;
+}): Promise<SessionConfiguration> {
+  const response = await axios.get(
+    `${appConfig.restTtsUrl.replace('/api/v1/tts', '')}/api/v1/config/sessions/default`,
+    {
+      headers: { 'X-API-Key': appConfig.apiKey },
+      params,
+    },
+  );
+  return response.data;
+}
+
+export async function createSessionConfiguration(payload: {
+  name: string;
+  user_id?: string;
+  llm_provider: string;
+  llm_model: string;
+  tts_provider: string;
+  tts_voice_id: string;
+  voice_tuning?: VoiceTuning;
+  system_prompt_id?: string;
+  system_prompt_text?: string;
+  optimization_level?: string;
+  target_language?: string;
+  enable_rag?: boolean;
+  is_default?: boolean;
+  metadata?: Record<string, unknown>;
+}): Promise<SessionConfiguration> {
+  const response = await axios.post(
+    `${appConfig.restTtsUrl.replace('/api/v1/tts', '')}/api/v1/config/sessions`,
+    payload,
+    {
+      headers: { 'X-API-Key': appConfig.apiKey },
+    },
+  );
+  return response.data;
+}
+
+export async function updateSessionConfiguration(
+  id: string,
+  payload: {
+    name?: string;
+    llm_provider?: string;
+    llm_model?: string;
+    tts_provider?: string;
+    tts_voice_id?: string;
+    voice_tuning?: VoiceTuning;
+    system_prompt_id?: string;
+    system_prompt_text?: string;
+    optimization_level?: string;
+    target_language?: string;
+    enable_rag?: boolean;
+    is_default?: boolean;
+    metadata?: Record<string, unknown>;
+  },
+): Promise<SessionConfiguration> {
+  const response = await axios.put(
+    `${appConfig.restTtsUrl.replace('/api/v1/tts', '')}/api/v1/config/sessions/${id}`,
+    payload,
+    {
+      headers: { 'X-API-Key': appConfig.apiKey },
+    },
+  );
+  return response.data;
+}
+
+export async function deleteSessionConfiguration(id: string): Promise<void> {
+  await axios.delete(
+    `${appConfig.restTtsUrl.replace('/api/v1/tts', '')}/api/v1/config/sessions/${id}`,
+    {
+      headers: { 'X-API-Key': appConfig.apiKey },
+    },
+  );
+}
+

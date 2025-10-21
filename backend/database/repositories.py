@@ -18,6 +18,8 @@ from backend.database.models import (
     SessionMetrics,
     UserFeedback,
     TurnEvent,
+    SystemPrompt,
+    SessionConfiguration,
 )
 
 
@@ -516,4 +518,150 @@ class TurnEventRepository:
             .order_by(TurnEvent.timestamp)
             .all()
         )
+
+
+class SessionConfigRepository:
+    """Repository for session configuration management."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def create(
+        self,
+        name: str,
+        llm_provider: str,
+        llm_model: str,
+        tts_provider: str,
+        tts_voice_id: str,
+        user_id: Optional[str] = None,
+        description: Optional[str] = None,
+        voice_tuning: Optional[dict] = None,
+        system_prompt_id: Optional[str] = None,
+        optimization_level: str = "balanced",
+        target_language: str = "en-IN",
+        enable_rag: bool = False,
+        is_default: bool = False,
+        meta_data: Optional[dict] = None,
+    ) -> SessionConfiguration:
+        """Create a new session configuration."""
+        config = SessionConfiguration(
+            user_id=user_id,
+            name=name,
+            description=description,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            tts_provider=tts_provider,
+            tts_voice_id=tts_voice_id,
+            voice_tuning=voice_tuning or {},
+            system_prompt_id=system_prompt_id,
+            optimization_level=optimization_level,
+            target_language=target_language,
+            enable_rag=enable_rag,
+            is_default=is_default,
+            meta_data=meta_data or {},
+        )
+        self.db.add(config)
+        self.db.commit()
+        self.db.refresh(config)
+        return config
+
+    def get(self, config_id: str) -> Optional[SessionConfiguration]:
+        """Get a configuration by ID."""
+        return (
+            self.db.query(SessionConfiguration)
+            .filter(SessionConfiguration.id == config_id)
+            .first()
+        )
+
+    def list(self, user_id: Optional[str] = None) -> list[SessionConfiguration]:
+        """List configurations, optionally filtered by user."""
+        query = self.db.query(SessionConfiguration)
+        if user_id:
+            query = query.filter(SessionConfiguration.user_id == user_id)
+        return query.order_by(SessionConfiguration.created_at.desc()).all()
+
+    def get_default(self, user_id: Optional[str] = None) -> Optional[SessionConfiguration]:
+        """Get the default configuration for a user."""
+        query = self.db.query(SessionConfiguration).filter(
+            SessionConfiguration.is_default == True
+        )
+        if user_id:
+            query = query.filter(SessionConfiguration.user_id == user_id)
+        return query.first()
+
+    def update(
+        self,
+        config_id: str,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        llm_provider: Optional[str] = None,
+        llm_model: Optional[str] = None,
+        tts_provider: Optional[str] = None,
+        tts_voice_id: Optional[str] = None,
+        voice_tuning: Optional[dict] = None,
+        system_prompt_id: Optional[str] = None,
+        optimization_level: Optional[str] = None,
+        target_language: Optional[str] = None,
+        enable_rag: Optional[bool] = None,
+        is_default: Optional[bool] = None,
+        meta_data: Optional[dict] = None,
+    ) -> Optional[SessionConfiguration]:
+        """Update a configuration."""
+        config = self.get(config_id)
+        if not config:
+            return None
+
+        if name is not None:
+            config.name = name
+        if description is not None:
+            config.description = description
+        if llm_provider is not None:
+            config.llm_provider = llm_provider
+        if llm_model is not None:
+            config.llm_model = llm_model
+        if tts_provider is not None:
+            config.tts_provider = tts_provider
+        if tts_voice_id is not None:
+            config.tts_voice_id = tts_voice_id
+        if voice_tuning is not None:
+            config.voice_tuning = voice_tuning
+        if system_prompt_id is not None:
+            config.system_prompt_id = system_prompt_id
+        if optimization_level is not None:
+            config.optimization_level = optimization_level
+        if target_language is not None:
+            config.target_language = target_language
+        if enable_rag is not None:
+            config.enable_rag = enable_rag
+        if is_default is not None:
+            if is_default:
+                # Unset other defaults
+                self._unset_defaults(config.user_id)
+            config.is_default = is_default
+        if meta_data is not None:
+            config.meta_data = meta_data
+
+        self.db.commit()
+        self.db.refresh(config)
+        return config
+
+    def delete(self, config_id: str) -> bool:
+        """Delete a configuration."""
+        config = self.get(config_id)
+        if not config:
+            return False
+
+        self.db.delete(config)
+        self.db.commit()
+        return True
+
+    def _unset_defaults(self, user_id: Optional[str] = None) -> None:
+        """Unset all existing default configurations for a user."""
+        query = self.db.query(SessionConfiguration).filter(
+            SessionConfiguration.is_default == True
+        )
+        if user_id:
+            query = query.filter(SessionConfiguration.user_id == user_id)
+        query.update({"is_default": False})
+        self.db.commit()
 

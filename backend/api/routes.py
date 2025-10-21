@@ -23,6 +23,7 @@ from backend.database.repositories import (
     CostEntryRepository,
     SessionMetricsRepository,
     UserFeedbackRepository,
+    SessionConfigRepository,
 )
 from .dependencies import require_api_key
 import json
@@ -736,4 +737,309 @@ async def submit_feedback(request: FeedbackRequest, db: Session = Depends(get_db
         "rating_type": feedback.rating_type,
         "created_at": feedback.created_at.isoformat(),
     }, status_code=status.HTTP_201_CREATED)
+
+
+# Session Configuration Endpoints
+
+class SessionConfigCreate(BaseModel):
+    """Request model for creating a session configuration."""
+    name: str
+    user_id: Optional[str] = None
+    llm_provider: str
+    llm_model: str
+    tts_provider: str
+    tts_voice_id: str
+    voice_tuning: Optional[dict] = None
+    system_prompt_id: Optional[str] = None
+    system_prompt_text: Optional[str] = None
+    optimization_level: str = "balanced"
+    target_language: str = "en-IN"
+    enable_rag: bool = False
+    is_default: bool = False
+    metadata: Optional[dict] = None
+
+
+class SessionConfigUpdate(BaseModel):
+    """Request model for updating a session configuration."""
+    name: Optional[str] = None
+    llm_provider: Optional[str] = None
+    llm_model: Optional[str] = None
+    tts_provider: Optional[str] = None
+    tts_voice_id: Optional[str] = None
+    voice_tuning: Optional[dict] = None
+    system_prompt_id: Optional[str] = None
+    system_prompt_text: Optional[str] = None
+    optimization_level: Optional[str] = None
+    target_language: Optional[str] = None
+    enable_rag: Optional[bool] = None
+    is_default: Optional[bool] = None
+    metadata: Optional[dict] = None
+
+
+@router.get("/config/sessions", dependencies=[Depends(require_api_key)])
+async def list_session_configs(
+    user_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """List all session configurations, optionally filtered by user.
+
+    Args:
+        user_id: Filter by user ID (optional)
+    """
+    config_repo = SessionConfigRepository(db)
+    configs = config_repo.list(user_id=user_id)
+
+    return JSONResponse({
+        "configs": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "user_id": c.user_id,
+                "llm_provider": c.llm_provider,
+                "llm_model": c.llm_model,
+                "tts_provider": c.tts_provider,
+                "tts_voice_id": c.tts_voice_id,
+                "voice_tuning": c.voice_tuning,
+                "system_prompt_id": c.system_prompt_id,
+                "system_prompt_text": c.system_prompt_text,
+                "optimization_level": c.optimization_level,
+                "target_language": c.target_language,
+                "enable_rag": c.enable_rag,
+                "is_default": c.is_default,
+                "metadata": c.metadata,
+                "created_at": c.created_at.isoformat(),
+                "updated_at": c.updated_at.isoformat(),
+            }
+            for c in configs
+        ],
+        "total": len(configs),
+    })
+
+
+@router.get("/config/sessions/{config_id}", dependencies=[Depends(require_api_key)])
+async def get_session_config(
+    config_id: str,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Get a specific session configuration by ID."""
+    config_repo = SessionConfigRepository(db)
+    config = config_repo.get(config_id)
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session configuration '{config_id}' not found"
+        )
+
+    return JSONResponse({
+        "id": config.id,
+        "name": config.name,
+        "user_id": config.user_id,
+        "llm_provider": config.llm_provider,
+        "llm_model": config.llm_model,
+        "tts_provider": config.tts_provider,
+        "tts_voice_id": config.tts_voice_id,
+        "voice_tuning": config.voice_tuning,
+        "system_prompt_id": config.system_prompt_id,
+        "system_prompt_text": config.system_prompt_text,
+        "optimization_level": config.optimization_level,
+        "target_language": config.target_language,
+        "enable_rag": config.enable_rag,
+        "is_default": config.is_default,
+        "metadata": config.metadata,
+        "created_at": config.created_at.isoformat(),
+        "updated_at": config.updated_at.isoformat(),
+    })
+
+
+@router.get("/config/sessions/default", dependencies=[Depends(require_api_key)])
+async def get_default_config(
+    user_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Get the default session configuration for a user.
+
+    Args:
+        user_id: User ID (optional)
+    """
+    config_repo = SessionConfigRepository(db)
+    config = config_repo.get_default(user_id=user_id)
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No default configuration found"
+        )
+
+    return JSONResponse({
+        "id": config.id,
+        "name": config.name,
+        "user_id": config.user_id,
+        "llm_provider": config.llm_provider,
+        "llm_model": config.llm_model,
+        "tts_provider": config.tts_provider,
+        "tts_voice_id": config.tts_voice_id,
+        "voice_tuning": config.voice_tuning,
+        "system_prompt_id": config.system_prompt_id,
+        "system_prompt_text": config.system_prompt_text,
+        "optimization_level": config.optimization_level,
+        "target_language": config.target_language,
+        "enable_rag": config.enable_rag,
+        "is_default": config.is_default,
+        "metadata": config.metadata,
+        "created_at": config.created_at.isoformat(),
+        "updated_at": config.updated_at.isoformat(),
+    })
+
+
+@router.post("/config/sessions", dependencies=[Depends(require_api_key)])
+async def create_session_config(
+    request: SessionConfigCreate,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Create a new session configuration."""
+    config_repo = SessionConfigRepository(db)
+
+    try:
+        config = config_repo.create(
+            name=request.name,
+            user_id=request.user_id,
+            llm_provider=request.llm_provider,
+            llm_model=request.llm_model,
+            tts_provider=request.tts_provider,
+            tts_voice_id=request.tts_voice_id,
+            voice_tuning=request.voice_tuning,
+            system_prompt_id=request.system_prompt_id,
+            system_prompt_text=request.system_prompt_text,
+            optimization_level=request.optimization_level,
+            target_language=request.target_language,
+            enable_rag=request.enable_rag,
+            is_default=request.is_default,
+            metadata=request.metadata,
+        )
+
+        return JSONResponse({
+            "id": config.id,
+            "name": config.name,
+            "user_id": config.user_id,
+            "llm_provider": config.llm_provider,
+            "llm_model": config.llm_model,
+            "tts_provider": config.tts_provider,
+            "tts_voice_id": config.tts_voice_id,
+            "voice_tuning": config.voice_tuning,
+            "system_prompt_id": config.system_prompt_id,
+            "optimization_level": config.optimization_level,
+            "target_language": config.target_language,
+            "enable_rag": config.enable_rag,
+            "is_default": config.is_default,
+            "created_at": config.created_at.isoformat(),
+        }, status_code=status.HTTP_201_CREATED)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create session configuration: {str(e)}"
+        )
+
+
+@router.put("/config/sessions/{config_id}", dependencies=[Depends(require_api_key)])
+async def update_session_config(
+    config_id: str,
+    request: SessionConfigUpdate,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Update a session configuration."""
+    config_repo = SessionConfigRepository(db)
+
+    try:
+        # Build update kwargs from non-None fields
+        update_kwargs = {}
+        if request.name is not None:
+            update_kwargs["name"] = request.name
+        if request.llm_provider is not None:
+            update_kwargs["llm_provider"] = request.llm_provider
+        if request.llm_model is not None:
+            update_kwargs["llm_model"] = request.llm_model
+        if request.tts_provider is not None:
+            update_kwargs["tts_provider"] = request.tts_provider
+        if request.tts_voice_id is not None:
+            update_kwargs["tts_voice_id"] = request.tts_voice_id
+        if request.voice_tuning is not None:
+            update_kwargs["voice_tuning"] = request.voice_tuning
+        if request.system_prompt_id is not None:
+            update_kwargs["system_prompt_id"] = request.system_prompt_id
+        if request.system_prompt_text is not None:
+            update_kwargs["system_prompt_text"] = request.system_prompt_text
+        if request.optimization_level is not None:
+            update_kwargs["optimization_level"] = request.optimization_level
+        if request.target_language is not None:
+            update_kwargs["target_language"] = request.target_language
+        if request.enable_rag is not None:
+            update_kwargs["enable_rag"] = request.enable_rag
+        if request.is_default is not None:
+            update_kwargs["is_default"] = request.is_default
+        if request.metadata is not None:
+            update_kwargs["metadata"] = request.metadata
+
+        config = config_repo.update(config_id, **update_kwargs)
+
+        if not config:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session configuration '{config_id}' not found"
+            )
+
+        return JSONResponse({
+            "id": config.id,
+            "name": config.name,
+            "user_id": config.user_id,
+            "llm_provider": config.llm_provider,
+            "llm_model": config.llm_model,
+            "tts_provider": config.tts_provider,
+            "tts_voice_id": config.tts_voice_id,
+            "voice_tuning": config.voice_tuning,
+            "system_prompt_id": config.system_prompt_id,
+            "optimization_level": config.optimization_level,
+            "target_language": config.target_language,
+            "enable_rag": config.enable_rag,
+            "is_default": config.is_default,
+            "updated_at": config.updated_at.isoformat(),
+        })
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update session configuration: {str(e)}"
+        )
+
+
+@router.delete("/config/sessions/{config_id}", dependencies=[Depends(require_api_key)])
+async def delete_session_config(
+    config_id: str,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Delete a session configuration."""
+    config_repo = SessionConfigRepository(db)
+
+    try:
+        deleted = config_repo.delete(config_id)
+
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session configuration '{config_id}' not found"
+            )
+
+        return JSONResponse({"message": "Session configuration deleted successfully"})
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete session configuration: {str(e)}"
+        )
 
