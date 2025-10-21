@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { VoiceChat } from './modules/chat/VoiceChat';
-import { TelephonyDashboard } from './modules/admin/TelephonyDashboard';
+// import { TelephonyDashboard } from './modules/admin/TelephonyDashboard';  // Hidden: LiveKit not configured
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { LanguageSelector, type LanguageCode } from './components/LanguageSelector';
 
@@ -70,9 +70,9 @@ export default function App() {
           </div>
         </section>
 
-        <section className='grid gap-8 lg:grid-cols-[2fr,1fr]'>
+        <section className=''>
           <VoiceChat sessionId={sessionId} onSessionChange={setSessionId} optimizationLevel={optimizationLevel} />
-          <TelephonyDashboard />
+          {/* <TelephonyDashboard /> - Temporarily hidden: LiveKit not configured */}
         </section>
 
         {sessionId && (

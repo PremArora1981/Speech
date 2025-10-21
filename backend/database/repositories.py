@@ -121,7 +121,7 @@ class TelephonyRepository:
         direction: str,
         sip_uri: str,
         transport: str | None,
-        metadata: dict | None,
+        meta_data: dict | None,
         credential_ref: str | None,
     ) -> TelephonyTrunk:
         trunk = self.db.query(TelephonyTrunk).filter(TelephonyTrunk.trunk_id == trunk_id).first()
@@ -130,7 +130,7 @@ class TelephonyRepository:
             trunk.direction = direction
             trunk.sip_uri = sip_uri
             trunk.transport = transport
-            trunk.metadata = metadata or {}
+            trunk.meta_data = meta_data or {}
             trunk.credential_ref = credential_ref
         else:
             trunk = TelephonyTrunk(
@@ -139,7 +139,7 @@ class TelephonyRepository:
                 direction=direction,
                 sip_uri=sip_uri,
                 transport=transport,
-                metadata=metadata or {},
+                meta_data=meta_data or {},
                 credential_ref=credential_ref,
             )
             self.db.add(trunk)
@@ -171,7 +171,7 @@ class GuardrailRepository:
         input_text: Optional[str] = None,
         output_text: Optional[str] = None,
         safe_response: Optional[str] = None,
-        metadata: Optional[dict] = None,
+        meta_data: Optional[dict] = None,
     ) -> GuardrailViolation:
         """Log a guardrail violation."""
         violation = GuardrailViolation(
@@ -184,7 +184,7 @@ class GuardrailRepository:
             input_text=input_text,
             output_text=output_text,
             safe_response=safe_response,
-            metadata=metadata or {},
+            meta_data=meta_data or {},
         )
         self.db.add(violation)
         self.db.commit()
@@ -231,7 +231,7 @@ class CostEntryRepository:
         turn_id: Optional[str] = None,
         optimization_level: Optional[str] = None,
         cached: bool = False,
-        metadata: Optional[dict] = None,
+        meta_data: Optional[dict] = None,
     ) -> CostEntry:
         """Log a cost entry."""
         entry = CostEntry(
@@ -245,7 +245,7 @@ class CostEntryRepository:
             cost_usd=cost_usd,
             optimization_level=optimization_level,
             cached=cached,
-            metadata=metadata or {},
+            meta_data=meta_data or {},
         )
         self.db.add(entry)
         self.db.commit()
@@ -417,7 +417,7 @@ class UserFeedbackRepository:
         offensive: bool = False,
         user_input: Optional[str] = None,
         assistant_response: Optional[str] = None,
-        metadata: Optional[dict] = None,
+        meta_data: Optional[dict] = None,
     ) -> UserFeedback:
         """Add user feedback."""
         feedback = UserFeedback(
@@ -434,7 +434,7 @@ class UserFeedbackRepository:
             offensive=offensive,
             user_input=user_input,
             assistant_response=assistant_response,
-            metadata=metadata or {},
+            meta_data=meta_data or {},
         )
         self.db.add(feedback)
         self.db.commit()

@@ -101,7 +101,7 @@ class LiveKitTelephonyAdapter:
                         direction="outbound",
                         sip_uri=trunk.address,
                         transport=str(trunk.transport),
-                        metadata={"name": trunk.name},
+                        meta_data={"name": trunk.name},
                         credential_ref=None,
                     )
 
@@ -124,7 +124,7 @@ class LiveKitTelephonyAdapter:
                         direction="inbound",
                         sip_uri=trunk.address,
                         transport=str(trunk.transport),
-                        metadata={"name": trunk.name},
+                        meta_data={"name": trunk.name},
                         credential_ref=None,
                     )
 
@@ -159,17 +159,17 @@ class LiveKitTelephonyAdapter:
                 direction=registration.direction,
                 sip_uri=registration.sip_uri,
                 transport=registration.transport,
-                metadata=registration.metadata,
+                meta_data=registration.metadata,
                 credential_ref=credential_ref,
             )
 
             return SIPTrunkConnectionInfo(
                 trunk_id=trunk.trunk_id,
-                name=trunk.metadata.get("name") if trunk.metadata else trunk.trunk_id,
+                name=trunk.meta_data.get("name") if trunk.meta_data else trunk.trunk_id,
                 direction=trunk.direction,
                 sip_uri=trunk.sip_uri,
                 transport=trunk.transport or "",
                 provider=trunk.provider,
-                metadata=trunk.metadata,
+                metadata=trunk.meta_data,
             )
 

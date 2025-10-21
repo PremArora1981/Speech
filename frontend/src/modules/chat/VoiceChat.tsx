@@ -266,12 +266,14 @@ export function VoiceChat({ sessionId, onSessionChange, optimizationLevel }: Voi
     teardownSocket();
     setConnectionStatus('connecting');
 
-    const socket = new WebSocket(WEB_SOCKET_URL);
+    // Add API key as query parameter for WebSocket authentication
+    const wsUrl = `${WEB_SOCKET_URL}?api_key=${encodeURIComponent(API_KEY)}`;
+    const socket = new WebSocket(wsUrl);
     wsRef.current = socket;
 
     socket.addEventListener('open', () => {
       setConnectionStatus('connected');
-      socket.send(JSON.stringify({ type: 'auth', apiKey: API_KEY, sessionId: stableSessionId }));
+      // No need to send auth message - API key is in query params
       flushPendingMessages();
       setError(null);
     });

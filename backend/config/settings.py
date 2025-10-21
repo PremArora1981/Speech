@@ -117,6 +117,13 @@ class Settings(BaseSettings):
     )
     debug: bool = Field(default=False, validation_alias="DEBUG")
 
+    # Backend API authentication
+    api_key: str = Field(
+        default="dev_api_key_12345",
+        validation_alias="API_KEY",
+        description="API key for backend authentication"
+    )
+
     sarvam_api_base: AnyHttpUrl = Field(
         default="https://api.sarvam.ai", validation_alias="SARVAM_API_BASE"
     )

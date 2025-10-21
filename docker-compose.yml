@@ -1,0 +1,185 @@
+version: '3.8'
+
+services:
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: speech-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Database
+      - DATABASE_URL=postgresql://speechai:speechai_password@postgres:5432/speechai
+
+      # Redis
+      - REDIS_URL=redis://redis:6379/0
+
+      # API Keys (set these in .env file)
+      - SARVAM_API_KEY=${SARVAM_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+
+      # Weaviate
+      - WEAVIATE_URL=http://weaviate:8080
+      - WEAVIATE_API_KEY=${WEAVIATE_API_KEY:-}
+
+      # LiveKit (Telephony)
+      - LIVEKIT_PROJECT_URL=${LIVEKIT_PROJECT_URL:-}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
+
+      # Application Settings
+      - ENVIRONMENT=production
+      - LOG_LEVEL=info
+    volumes:
+      - ./backend:/app/backend
+      - speech-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      weaviate:
+        condition: service_started
+    networks:
+      - speech-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: speech-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - speech-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: speech-postgres
+    environment:
+      - POSTGRES_USER=speechai
+      - POSTGRES_PASSWORD=speechai_password
+      - POSTGRES_DB=speechai
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - speech-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U speechai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: speech-redis
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - speech-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Weaviate Vector Database
+  weaviate:
+    image: semitechnologies/weaviate:1.24.1
+    container_name: speech-weaviate
+    environment:
+      - QUERY_DEFAULTS_LIMIT=25
+      - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
+      - PERSISTENCE_DATA_PATH=/var/lib/weaviate
+      - DEFAULT_VECTORIZER_MODULE=text2vec-openai
+      - ENABLE_MODULES=text2vec-openai
+      - OPENAI_APIKEY=${OPENAI_API_KEY}
+      - CLUSTER_HOSTNAME=weaviate
+    volumes:
+      - weaviate-data:/var/lib/weaviate
+    networks:
+      - speech-network
+    restart: unless-stopped
+
+  # Prometheus (Optional Monitoring)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: speech-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - speech-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana (Optional Monitoring)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: speech-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - speech-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+# Networks
+networks:
+  speech-network:
+    driver: bridge
+
+# Volumes
+volumes:
+  postgres-data:
+  redis-data:
+  weaviate-data:
+  speech-data:
+  prometheus-data:
+  grafana-data:

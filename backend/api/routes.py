@@ -30,7 +30,15 @@ def get_pipeline() -> ConversationPipeline:
 
 
 def get_telephony_adapter() -> TelephonyAdapter:
-    return LiveKitTelephonyAdapter()
+    """Get telephony adapter with graceful error handling for missing credentials."""
+    try:
+        return LiveKitTelephonyAdapter()
+    except ValueError as e:
+        # LiveKit credentials not configured - return friendly error
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Telephony service not configured: {str(e)}. Please configure LiveKit credentials in your .env file."
+        )
 
 
 @router.websocket("/voice-session")
@@ -97,7 +105,8 @@ async def voice_session(
                 continue
 
     except WebSocketDisconnect:
-        await websocket.close()
+        # WebSocket already closed, no need to close again
+        pass
 
 
 @router.post("/telephony/calls", dependencies=[Depends(require_api_key)])

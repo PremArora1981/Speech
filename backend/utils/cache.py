@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 try:
-    import aioredis  # type: ignore
+    from redis import asyncio as aioredis  # type: ignore
 except ImportError:  # pragma: no cover
     aioredis = None
 
@@ -82,7 +82,7 @@ class CachedLLMResponse:
 class TTSCache:
     def __init__(self, redis_url: Optional[str] = None, default_ttl_seconds: int = 600) -> None:
         if redis_url and not aioredis:
-            raise RuntimeError("aioredis must be installed for Redis caching support.")
+            raise RuntimeError("redis package must be installed for Redis caching support.")
         self.redis_url = redis_url
         self.default_ttl_seconds = default_ttl_seconds
         self._redis = None
@@ -139,7 +139,7 @@ class LLMCache:
     ) -> None:
         if redis_url and not aioredis:
             raise RuntimeError(
-                "aioredis must be installed for Redis caching support."
+                "redis package must be installed for Redis caching support."
             )
         self.redis_url = redis_url
         self.default_ttl_seconds = default_ttl_seconds
