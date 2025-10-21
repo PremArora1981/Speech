@@ -3,6 +3,8 @@ import { VoiceChat } from './modules/chat/VoiceChat';
 // import { TelephonyDashboard } from './modules/admin/TelephonyDashboard';  // Hidden: LiveKit not configured
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { LanguageSelector, type LanguageCode } from './components/LanguageSelector';
+import { ConfigurationPanel, SessionConfig } from './components/ConfigurationPanel';
+import { Settings } from 'lucide-react';
 
 type OptimizationLevel = 'quality' | 'balanced_quality' | 'balanced' | 'balanced_speed' | 'speed';
 
@@ -10,6 +12,21 @@ export default function App() {
   const [sessionId, setSessionId] = useState<string>('');
   const [optimizationLevel, setOptimizationLevel] = useState<OptimizationLevel>('balanced');
   const [targetLanguage, setTargetLanguage] = useState<LanguageCode>('hi-IN');
+  const [showConfiguration, setShowConfiguration] = useState(false);
+  const [sessionConfig, setSessionConfig] = useState<SessionConfig>({
+    llm: { provider: 'sarvam', model: 'sarvam-1' },
+    voice: {
+      provider: 'sarvam',
+      voice_id: 'anushka',
+      display_name: 'Anushka',
+      tuning: {},
+    },
+    systemPromptId: '',
+    systemPromptText: 'You are a helpful AI assistant.',
+    optimizationLevel: 'balanced',
+    targetLanguage: 'hi-IN',
+    enableRAG: false,
+  });
 
   const sliderMarks = useMemo(
     () => [
@@ -32,7 +49,32 @@ export default function App() {
             <h1 className='text-2xl font-semibold text-neutral-50'>Speech AI Voice Chat</h1>
             <p className='text-sm text-neutral-400'>Conversational agent with real-time voice pipeline</p>
           </div>
+          <button
+            onClick={() => setShowConfiguration(!showConfiguration)}
+            className='flex items-center gap-2 px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 transition-colors'
+          >
+            <Settings className='w-5 h-5' />
+            <span>{showConfiguration ? 'Hide' : 'Show'} Configuration</span>
+          </button>
         </header>
+
+        {/* Configuration Panel */}
+        {showConfiguration && (
+          <section className='mb-6'>
+            <ConfigurationPanel
+              value={sessionConfig}
+              onChange={(config) => {
+                setSessionConfig(config);
+                // Sync with existing state
+                setOptimizationLevel(config.optimizationLevel as OptimizationLevel);
+                setTargetLanguage(config.targetLanguage as LanguageCode);
+              }}
+              onSave={(config) => {
+                console.log('Configuration saved:', config);
+              }}
+            />
+          </section>
+        )}
 
         <section className='grid gap-6 lg:grid-cols-2'>
           <div className='rounded-xl border border-neutral-800 bg-neutral-900/70 p-6'>

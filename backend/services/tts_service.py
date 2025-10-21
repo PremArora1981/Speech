@@ -383,5 +383,8 @@ class TTSOrchestrator:
         }.get(codec, "audio/wav")
 
 
-__all__ = ["TTSOrchestrator"]
+# Alias for backwards compatibility
+TTSService = TTSOrchestrator
+
+__all__ = ["TTSOrchestrator", "TTSService", "TTSResponse"]
 

@@ -7,7 +7,7 @@ import base64
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from redis import asyncio as aioredis  # type: ignore
@@ -308,11 +308,95 @@ class LLMCache:
             await self._redis.close()
 
 
+class SimpleCache:
+    """Simple key-value cache for general-purpose caching."""
+
+    def __init__(self, redis_url: Optional[str] = None, default_ttl_seconds: int = 3600) -> None:
+        if redis_url and not aioredis:
+            raise RuntimeError("redis package must be installed for Redis caching support.")
+        self.redis_url = redis_url
+        self.default_ttl_seconds = default_ttl_seconds
+        self._redis = None
+
+    async def _redis_client(self):
+        if not self.redis_url:
+            raise CacheNotConfiguredError("Redis URL not configured.")
+        if not self._redis:
+            self._redis = await aioredis.from_url(self.redis_url)  # type: ignore
+        return self._redis
+
+    async def get(self, key: str) -> Optional[Any]:
+        try:
+            client = await self._redis_client()
+        except CacheNotConfiguredError:
+            return None
+
+        value = await client.get(key)
+        if value is None:
+            return None
+
+        try:
+            return json.loads(value.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return value.decode("utf-8")
+
+    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+        try:
+            client = await self._redis_client()
+        except CacheNotConfiguredError:
+            return
+
+        # Serialize value to JSON if it's not a string
+        if isinstance(value, str):
+            encoded_value = value
+        else:
+            encoded_value = json.dumps(value)
+
+        await client.set(key, encoded_value, ex=ttl or self.default_ttl_seconds)
+
+    async def close(self) -> None:
+        if self._redis:
+            await self._redis.close()
+
+
+# Global cache instance
+_cache_instance: Optional[SimpleCache] = None
+
+
+def get_cache(redis_url: Optional[str] = None) -> Optional[SimpleCache]:
+    """Get or create a global cache instance.
+    
+    Args:
+        redis_url: Optional Redis URL. If not provided, uses environment variable.
+        
+    Returns:
+        SimpleCache instance or None if Redis is not configured.
+    """
+    global _cache_instance
+    
+    if _cache_instance is None:
+        # Get Redis URL from environment if not provided
+        if redis_url is None:
+            import os
+            redis_url = os.environ.get("REDIS_URL")
+        
+        # Only create cache if Redis URL is available
+        if redis_url:
+            try:
+                _cache_instance = SimpleCache(redis_url=redis_url)
+            except Exception:
+                _cache_instance = None
+    
+    return _cache_instance
+
+
 __all__ = [
     "CacheNotConfiguredError",
     "CachedAudio",
     "CachedLLMResponse",
     "TTSCache",
     "LLMCache",
+    "SimpleCache",
+    "get_cache",
 ]
 

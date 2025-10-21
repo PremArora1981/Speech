@@ -93,8 +93,38 @@ async def voice_session(
             session_id = payload.get("sessionId") or payload.get("session_id")
 
             if message_type == "start":
-                optimization_level = payload.get("optimizationLevel")
-                target_language = payload.get("targetLanguage", target_language)
+                # Check for configuration ID
+                config_id = payload.get("configId")
+                
+                if config_id:
+                    # Load configuration from database
+                    from backend.database.repositories import SessionConfigRepository
+                    from backend.database import get_db
+                    
+                    db = next(get_db())
+                    config_repo = SessionConfigRepository(db)
+                    config = config_repo.get(config_id)
+                    
+                    if config:
+                        # Apply configuration
+                        optimization_level = config.optimization_level
+                        target_language = config.target_language
+                        
+                        # TODO: Apply LLM provider/model configuration to pipeline
+                        # TODO: Apply TTS provider/voice configuration to pipeline
+                        # TODO: Apply system prompt to pipeline
+                        
+                        logger.info(f"Loaded configuration '{config.name}' for session {session_id}")
+                        await websocket.send_json({
+                            "type": "config_loaded",
+                            "configName": config.name,
+                            "sessionId": session_id
+                        })
+                else:
+                    # Use default values from payload
+                    optimization_level = payload.get("optimizationLevel")
+                    target_language = payload.get("targetLanguage", target_language)
+                
                 await pipeline.start_session(session_id, optimization_level)
                 await websocket.send_json({"type": "session_started", "sessionId": session_id})
                 continue
