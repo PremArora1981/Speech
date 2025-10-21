@@ -1,12 +1,35 @@
 import { useMemo, useState } from 'react';
+import { Settings } from 'lucide-react';
 import { VoiceChat } from './modules/chat/VoiceChat';
 // import { TelephonyDashboard } from './modules/admin/TelephonyDashboard';  // Hidden: LiveKit not configured
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { LanguageSelector, type LanguageCode } from './components/LanguageSelector';
-import { ConfigurationPanel, SessionConfig } from './components/ConfigurationPanel';
-import { Settings } from 'lucide-react';
 
 type OptimizationLevel = 'quality' | 'balanced_quality' | 'balanced' | 'balanced_speed' | 'speed';
+
+// Lazy load the configuration panel to avoid bundle size issues
+const ConfigurationPanel = lazy(() => 
+  import('./components/ConfigurationPanel').then(module => ({
+    default: module.ConfigurationPanel
+  }))
+);
+
+import { lazy, Suspense } from 'react';
+
+export type SessionConfig = {
+  llm: { provider: string; model: string };
+  voice: {
+    provider: string;
+    voice_id: string;
+    display_name: string;
+    tuning: Record<string, number>;
+  };
+  systemPromptId: string;
+  systemPromptText: string;
+  optimizationLevel: string;
+  targetLanguage: string;
+  enableRAG: boolean;
+};
 
 export default function App() {
   const [sessionId, setSessionId] = useState<string>('');
@@ -52,27 +75,34 @@ export default function App() {
           <button
             onClick={() => setShowConfiguration(!showConfiguration)}
             className='flex items-center gap-2 px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 transition-colors'
+            title='Toggle Configuration Panel'
           >
             <Settings className='w-5 h-5' />
-            <span>{showConfiguration ? 'Hide' : 'Show'} Configuration</span>
+            <span className='hidden sm:inline'>{showConfiguration ? 'Hide' : 'Show'} Config</span>
           </button>
         </header>
 
         {/* Configuration Panel */}
         {showConfiguration && (
           <section className='mb-6'>
-            <ConfigurationPanel
-              value={sessionConfig}
-              onChange={(config) => {
-                setSessionConfig(config);
-                // Sync with existing state
-                setOptimizationLevel(config.optimizationLevel as OptimizationLevel);
-                setTargetLanguage(config.targetLanguage as LanguageCode);
-              }}
-              onSave={(config) => {
-                console.log('Configuration saved:', config);
-              }}
-            />
+            <Suspense fallback={
+              <div className='bg-white rounded-lg shadow-lg p-8 text-center'>
+                <div className='text-gray-600'>Loading configuration panel...</div>
+              </div>
+            }>
+              <ConfigurationPanel
+                value={sessionConfig}
+                onChange={(config) => {
+                  setSessionConfig(config);
+                  // Sync with existing state
+                  setOptimizationLevel(config.optimizationLevel as OptimizationLevel);
+                  setTargetLanguage(config.targetLanguage as LanguageCode);
+                }}
+                onSave={(config) => {
+                  console.log('Configuration saved:', config);
+                }}
+              />
+            </Suspense>
           </section>
         )}
 
