@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, lazy, Suspense } from 'react';
 import { Settings } from 'lucide-react';
 import { VoiceChat } from './modules/chat/VoiceChat';
 // import { TelephonyDashboard } from './modules/admin/TelephonyDashboard';  // Hidden: LiveKit not configured
@@ -13,8 +13,6 @@ const ConfigurationPanel = lazy(() =>
     default: module.ConfigurationPanel
   }))
 );
-
-import { lazy, Suspense } from 'react';
 
 export type SessionConfig = {
   llm: { provider: string; model: string };
