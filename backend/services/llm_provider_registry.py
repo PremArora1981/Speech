@@ -288,130 +288,135 @@ class LLMProviderRegistry:
 
     def _initialize(self) -> None:
         """Initialize providers and register default providers."""
-        # Register Sarvam provider
-        self.register_provider(
-            LLMProvider(
-                id="sarvam",
-                name="sarvam",
-                display_name="Sarvam AI",
-                description="Indian language specialist with multilingual support",
-                requires_api_key=True,
-                supports_streaming=True,
-                base_url=str(settings.sarvam_api_base),
-                models=[
-                    LLMModel(
-                        id="sarvam-1",
-                        name="Sarvam-1",
-                        provider="sarvam",
-                        context_window=8192,
-                        max_output_tokens=2048,
-                        supports_streaming=True,
-                        cost_per_1k_input_tokens=0.0001,
-                        cost_per_1k_output_tokens=0.0002,
-                        description="Sarvam's flagship model optimized for Indian languages",
-                    ),
-                ],
-            ),
-            SarvamLLMClient,
-        )
+        # Only register Sarvam provider (always available with API key)
+        if settings.sarvam_api_key:
+            self.register_provider(
+                LLMProvider(
+                    id="sarvam",
+                    name="sarvam",
+                    display_name="Sarvam AI",
+                    description="Indian language specialist with multilingual support",
+                    requires_api_key=True,
+                    supports_streaming=True,
+                    base_url=str(settings.sarvam_api_base),
+                    models=[
+                        LLMModel(
+                            id="sarvam-1",
+                            name="Sarvam-1",
+                            provider="sarvam",
+                            context_window=8192,
+                            max_output_tokens=2048,
+                            supports_streaming=True,
+                            cost_per_1k_input_tokens=0.0001,
+                            cost_per_1k_output_tokens=0.0002,
+                            description="Sarvam's flagship model optimized for Indian languages",
+                        ),
+                    ],
+                ),
+                SarvamLLMClient,
+            )
 
-        # Register OpenAI provider
-        self.register_provider(
-            LLMProvider(
-                id="openai",
-                name="openai",
-                display_name="OpenAI",
-                description="Industry-leading models from OpenAI",
-                requires_api_key=True,
-                supports_streaming=True,
-                base_url="https://api.openai.com/v1",
-                models=[
-                    LLMModel(
-                        id="gpt-3.5-turbo",
-                        name="GPT-3.5 Turbo",
-                        provider="openai",
-                        context_window=16385,
-                        max_output_tokens=4096,
-                        supports_streaming=True,
-                        cost_per_1k_input_tokens=0.0005,
-                        cost_per_1k_output_tokens=0.0015,
-                        description="Fast and cost-effective",
-                    ),
-                    LLMModel(
-                        id="gpt-4",
-                        name="GPT-4",
-                        provider="openai",
-                        context_window=8192,
-                        max_output_tokens=8192,
-                        supports_streaming=True,
-                        cost_per_1k_input_tokens=0.03,
-                        cost_per_1k_output_tokens=0.06,
-                        description="Most capable model",
-                    ),
-                    LLMModel(
-                        id="gpt-4-turbo",
-                        name="GPT-4 Turbo",
-                        provider="openai",
-                        context_window=128000,
-                        max_output_tokens=4096,
-                        supports_streaming=True,
-                        cost_per_1k_input_tokens=0.01,
-                        cost_per_1k_output_tokens=0.03,
-                        description="Latest GPT-4 with large context",
-                    ),
-                ],
-            ),
-            OpenAILLMClient,
-        )
+        # Only register OpenAI if API key is configured
+        if settings.openai_api_key:
+            self.register_provider(
+                LLMProvider(
+                    id="openai",
+                    name="openai",
+                    display_name="OpenAI",
+                    description="Industry-leading models from OpenAI",
+                    requires_api_key=True,
+                    supports_streaming=True,
+                    base_url="https://api.openai.com/v1",
+                    models=[
+                        LLMModel(
+                            id="gpt-3.5-turbo",
+                            name="GPT-3.5 Turbo",
+                            provider="openai",
+                            context_window=16385,
+                            max_output_tokens=4096,
+                            supports_streaming=True,
+                            cost_per_1k_input_tokens=0.0005,
+                            cost_per_1k_output_tokens=0.0015,
+                            description="Fast and cost-effective",
+                        ),
+                        LLMModel(
+                            id="gpt-4",
+                            name="GPT-4",
+                            provider="openai",
+                            context_window=8192,
+                            max_output_tokens=8192,
+                            supports_streaming=True,
+                            cost_per_1k_input_tokens=0.03,
+                            cost_per_1k_output_tokens=0.06,
+                            description="Most capable model",
+                        ),
+                        LLMModel(
+                            id="gpt-4-turbo",
+                            name="GPT-4 Turbo",
+                            provider="openai",
+                            context_window=128000,
+                            max_output_tokens=4096,
+                            supports_streaming=True,
+                            cost_per_1k_input_tokens=0.01,
+                            cost_per_1k_output_tokens=0.03,
+                            description="Latest GPT-4 with large context",
+                        ),
+                    ],
+                ),
+                OpenAILLMClient,
+            )
 
-        # Register Anthropic provider
-        self.register_provider(
-            LLMProvider(
-                id="anthropic",
-                name="anthropic",
-                display_name="Anthropic (Claude)",
-                description="Claude models from Anthropic",
-                requires_api_key=True,
-                supports_streaming=True,
-                base_url="https://api.anthropic.com/v1",
-                models=[
-                    LLMModel(
-                        id="claude-3-haiku-20240307",
-                        name="Claude 3 Haiku",
-                        provider="anthropic",
-                        context_window=200000,
-                        max_output_tokens=4096,
-                        supports_streaming=True,
-                        cost_per_1k_input_tokens=0.00025,
-                        cost_per_1k_output_tokens=0.00125,
-                        description="Fastest and most compact model",
-                    ),
-                    LLMModel(
-                        id="claude-3-sonnet-20240229",
-                        name="Claude 3 Sonnet",
-                        provider="anthropic",
-                        context_window=200000,
-                        max_output_tokens=4096,
-                        supports_streaming=True,
-                        cost_per_1k_input_tokens=0.003,
-                        cost_per_1k_output_tokens=0.015,
-                        description="Balanced performance and speed",
-                    ),
-                    LLMModel(
-                        id="claude-3-opus-20240229",
-                        name="Claude 3 Opus",
-                        provider="anthropic",
-                        context_window=200000,
-                        max_output_tokens=4096,
-                        supports_streaming=True,
-                        cost_per_1k_input_tokens=0.015,
-                        cost_per_1k_output_tokens=0.075,
-                        description="Most powerful Claude model",
-                    ),
-                ],
-            ),
-            AnthropicLLMClient,
-        )
+        # Only register Anthropic if API key is configured (check environment)
+        import os
+        anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+        if anthropic_key:
+            self.register_provider(
+                LLMProvider(
+                    id="anthropic",
+                    name="anthropic",
+                    display_name="Anthropic (Claude)",
+                    description="Claude models from Anthropic",
+                    requires_api_key=True,
+                    supports_streaming=True,
+                    base_url="https://api.anthropic.com/v1",
+                    models=[
+                        LLMModel(
+                            id="claude-3-haiku-20240307",
+                            name="Claude 3 Haiku",
+                            provider="anthropic",
+                            context_window=200000,
+                            max_output_tokens=4096,
+                            supports_streaming=True,
+                            cost_per_1k_input_tokens=0.00025,
+                            cost_per_1k_output_tokens=0.00125,
+                            description="Fastest and most compact model",
+                        ),
+                        LLMModel(
+                            id="claude-3-sonnet-20240229",
+                            name="Claude 3 Sonnet",
+                            provider="anthropic",
+                            context_window=200000,
+                            max_output_tokens=4096,
+                            supports_streaming=True,
+                            cost_per_1k_input_tokens=0.003,
+                            cost_per_1k_output_tokens=0.015,
+                            description="Balanced performance and speed",
+                        ),
+                        LLMModel(
+                            id="claude-3-opus-20240229",
+                            name="Claude 3 Opus",
+                            provider="anthropic",
+                            context_window=200000,
+                            max_output_tokens=4096,
+                            supports_streaming=True,
+                            cost_per_1k_input_tokens=0.015,
+                            cost_per_1k_output_tokens=0.075,
+                            description="Most powerful Claude model",
+                        ),
+                    ],
+                ),
+                AnthropicLLMClient,
+            )
 
     def register_provider(
         self,

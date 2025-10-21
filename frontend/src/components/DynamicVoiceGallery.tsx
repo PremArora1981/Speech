@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Play, Volume2, RefreshCw, Loader2, Search } from 'lucide-react';
-import { fetchVoices, fetchCustomElevenLabsVoices, previewVoice, Voice, VoiceTuning } from '../lib/api';
+import { fetchVoices, fetchCustomElevenLabsVoices, previewVoice } from '../lib/api';
+import type { Voice, VoiceTuning } from '../lib/api';
 
 export type VoiceConfig = {
   provider: string;

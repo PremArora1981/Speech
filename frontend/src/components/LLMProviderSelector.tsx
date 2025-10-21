@@ -1,5 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { fetchLLMProviders, fetchLLMModels, LLMProvider, LLMModel } from '../lib/api';
+import { fetchLLMProviders, fetchLLMModels } from '../lib/api';
+import type { LLMProvider as APILLMProvider, LLMModel as APILLMModel } from '../lib/api';
+
+// Re-export types
+type LLMProvider = APILLMProvider;
+type LLMModel = APILLMModel;
 
 export type LLMConfig = {
   provider: string;

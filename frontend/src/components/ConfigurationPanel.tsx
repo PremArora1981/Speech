@@ -8,8 +8,8 @@ import {
   fetchSessionConfigurations,
   fetchSessionConfiguration,
   createSessionConfiguration,
-  SessionConfiguration,
 } from '../lib/api';
+import type { SessionConfiguration } from '../lib/api';
 
 export type SessionConfig = {
   // LLM Configuration

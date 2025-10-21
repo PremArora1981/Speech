@@ -4,8 +4,8 @@ import {
   fetchSystemPrompts,
   createSystemPrompt,
   updateSystemPrompt,
-  SystemPrompt,
 } from '../lib/api';
+import type { SystemPrompt } from '../lib/api';
 
 type SystemPromptEditorProps = {
   value: string;
