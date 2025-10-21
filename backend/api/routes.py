@@ -15,6 +15,7 @@ from backend.services.telephony_service import (
 )
 from backend.services.voice_discovery import VoiceDiscoveryService
 from backend.services.tts_service import TTSService
+from backend.services.llm_provider_registry import LLMProviderRegistry
 from backend.schemas.tts import SynthesizeRequest, VoiceSelection
 from backend.database import get_db
 from backend.database.repositories import (
@@ -52,6 +53,11 @@ def get_voice_discovery() -> VoiceDiscoveryService:
 def get_tts_service() -> TTSService:
     """Get TTS service instance."""
     return TTSService()
+
+
+def get_llm_registry() -> LLMProviderRegistry:
+    """Get LLM provider registry instance."""
+    return LLMProviderRegistry()
 
 
 @router.websocket("/voice-session")
@@ -281,6 +287,75 @@ async def preview_voice(
 @router.get("/health")  # No API key required for health check
 async def health_check() -> JSONResponse:
     return JSONResponse({"status": "ok"}, status_code=status.HTTP_200_OK)
+
+
+# LLM Provider Endpoints
+
+@router.get("/llm/providers", dependencies=[Depends(require_api_key)])
+async def list_llm_providers(
+    registry: LLMProviderRegistry = Depends(get_llm_registry),
+) -> JSONResponse:
+    """List all available LLM providers."""
+    providers = registry.list_providers()
+
+    return JSONResponse({
+        "providers": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "display_name": p.display_name,
+                "description": p.description,
+                "requires_api_key": p.requires_api_key,
+                "supports_streaming": p.supports_streaming,
+                "model_count": len(p.models),
+            }
+            for p in providers
+        ],
+        "total": len(providers),
+    })
+
+
+@router.get("/llm/models", dependencies=[Depends(require_api_key)])
+async def list_llm_models(
+    provider: Optional[str] = None,
+    registry: LLMProviderRegistry = Depends(get_llm_registry),
+) -> JSONResponse:
+    """List all available LLM models, optionally filtered by provider.
+
+    Args:
+        provider: Filter by provider ID (e.g., sarvam, openai, anthropic)
+    """
+    if provider:
+        # Get models for specific provider
+        models = registry.get_models(provider)
+        if not models:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Provider '{provider}' not found"
+            )
+    else:
+        # Get all models from all providers
+        models = []
+        for prov in registry.list_providers():
+            models.extend(prov.models)
+
+    return JSONResponse({
+        "models": [
+            {
+                "id": m.id,
+                "name": m.name,
+                "provider": m.provider,
+                "context_window": m.context_window,
+                "max_output_tokens": m.max_output_tokens,
+                "supports_streaming": m.supports_streaming,
+                "cost_per_1k_input_tokens": m.cost_per_1k_input_tokens,
+                "cost_per_1k_output_tokens": m.cost_per_1k_output_tokens,
+                "description": m.description,
+            }
+            for m in models
+        ],
+        "total": len(models),
+    })
 
 
 # Pydantic models for request/response
