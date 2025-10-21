@@ -42,6 +42,23 @@ class ElevenLabsTTSClient:
         response.raise_for_status()
         return response.json()
 
+    async def list_voices(self) -> Dict[str, Any]:
+        """Fetch all available voices from ElevenLabs API.
+
+        Returns both stock voices and user's custom/cloned voices.
+        """
+        headers = {
+            "xi-api-key": self.api_key,
+        }
+
+        response = await self._client.get(
+            "/v1/voices",
+            headers=headers,
+            timeout=10,
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def close(self) -> None:
         """Close the underlying HTTP client."""
 

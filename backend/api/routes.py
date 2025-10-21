@@ -13,6 +13,9 @@ from backend.services.telephony_service import (
     LiveKitTelephonyAdapter,
     TelephonyTrunkRegistration,
 )
+from backend.services.voice_discovery import VoiceDiscoveryService
+from backend.services.tts_service import TTSService
+from backend.schemas.tts import SynthesizeRequest, VoiceSelection
 from backend.database import get_db
 from backend.database.repositories import (
     CostEntryRepository,
@@ -39,6 +42,16 @@ def get_telephony_adapter() -> TelephonyAdapter:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Telephony service not configured: {str(e)}. Please configure LiveKit credentials in your .env file."
         )
+
+
+def get_voice_discovery() -> VoiceDiscoveryService:
+    """Get voice discovery service instance."""
+    return VoiceDiscoveryService()
+
+
+def get_tts_service() -> TTSService:
+    """Get TTS service instance."""
+    return TTSService()
 
 
 @router.websocket("/voice-session")
@@ -141,6 +154,128 @@ async def register_trunk(payload: dict, adapter: TelephonyAdapter = Depends(get_
     )
     trunk = await adapter.save_trunk_details(registration)
     return JSONResponse({"trunk": trunk.__dict__}, status_code=status.HTTP_201_CREATED)
+
+
+# Voice Discovery Endpoints
+
+@router.get("/tts/providers", dependencies=[Depends(require_api_key)])
+async def list_tts_providers() -> JSONResponse:
+    """List all available TTS providers."""
+    providers = [
+        {
+            "id": "sarvam",
+            "name": "Sarvam AI",
+            "description": "Indian language specialist with 10+ Indian languages",
+            "supports_tuning": True,
+            "languages": ["hi-IN", "en-IN", "bn-IN", "gu-IN", "ta-IN", "te-IN", "ml-IN", "kn-IN", "mr-IN", "pa-IN"],
+        },
+        {
+            "id": "elevenlabs",
+            "name": "ElevenLabs",
+            "description": "Premium quality voices with custom voice cloning",
+            "supports_tuning": False,
+            "languages": ["en-US", "en-IN"],
+        },
+    ]
+    return JSONResponse({"providers": providers})
+
+
+@router.get("/tts/voices", dependencies=[Depends(require_api_key)])
+async def list_voices(
+    provider: Optional[str] = None,
+    language: Optional[str] = None,
+    include_custom: bool = True,
+    voice_service: VoiceDiscoveryService = Depends(get_voice_discovery),
+) -> JSONResponse:
+    """List all available voices, optionally filtered by provider and language.
+
+    Args:
+        provider: Filter by provider (sarvam or elevenlabs)
+        language: Filter by language code (e.g., en-IN)
+        include_custom: Include custom/cloned voices (default: true)
+    """
+    voices = await voice_service.fetch_all_voices(
+        provider=provider,
+        language=language,
+        include_custom=include_custom,
+    )
+
+    # Convert to dict for JSON response
+    return JSONResponse({
+        "voices": [v.model_dump() for v in voices],
+        "total": len(voices),
+    })
+
+
+@router.get("/tts/voices/elevenlabs/custom", dependencies=[Depends(require_api_key)])
+async def list_custom_elevenlabs_voices(
+    api_key: Optional[str] = None,
+    voice_service: VoiceDiscoveryService = Depends(get_voice_discovery),
+) -> JSONResponse:
+    """List only custom/cloned voices from user's ElevenLabs account.
+
+    Args:
+        api_key: Optional user's ElevenLabs API key (if different from default)
+    """
+    voices = await voice_service.fetch_custom_elevenlabs_voices(api_key=api_key)
+
+    return JSONResponse({
+        "voices": [v.model_dump() for v in voices],
+        "total": len(voices),
+    })
+
+
+class VoicePreviewRequest(BaseModel):
+    """Request model for voice preview."""
+    voice_id: str
+    provider: str
+    text: str = "Hello! This is a preview of this voice."
+    language_code: str = "en-IN"
+    pitch: Optional[float] = None
+    pace: Optional[float] = None
+    loudness: Optional[float] = None
+
+
+@router.post("/tts/voices/preview", dependencies=[Depends(require_api_key)])
+async def preview_voice(
+    request: VoicePreviewRequest,
+    tts_service: TTSService = Depends(get_tts_service),
+) -> JSONResponse:
+    """Preview a voice with custom text and optional tuning parameters.
+
+    Args:
+        request: Preview request containing voice details and text
+    """
+    try:
+        # Create synthesize request
+        synth_request = SynthesizeRequest(
+            text=request.text,
+            language_code=request.language_code,
+            optimization_level="balanced",  # Use balanced for preview
+            voice=VoiceSelection(
+                provider=request.provider,  # type: ignore
+                voice_id=request.voice_id,
+            ),
+            pitch=request.pitch,
+            pace=request.pace,
+            loudness=request.loudness,
+        )
+
+        # Synthesize speech
+        result = await tts_service.synthesize(synth_request)
+
+        return JSONResponse({
+            "audio_b64": result.audio_b64,
+            "mime_type": result.mime_type,
+            "voice_id": request.voice_id,
+            "provider": request.provider,
+        })
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to preview voice: {str(e)}"
+        )
 
 
 @router.get("/health")  # No API key required for health check
