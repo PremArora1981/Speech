@@ -16,6 +16,7 @@ from backend.services.telephony_service import (
 from backend.services.voice_discovery import VoiceDiscoveryService
 from backend.services.tts_service import TTSService
 from backend.services.llm_provider_registry import LLMProviderRegistry
+from backend.services.system_prompt_service import SystemPromptService
 from backend.schemas.tts import SynthesizeRequest, VoiceSelection
 from backend.database import get_db
 from backend.database.repositories import (
@@ -356,6 +357,230 @@ async def list_llm_models(
         ],
         "total": len(models),
     })
+
+
+# System Prompt Endpoints
+
+class SystemPromptCreate(BaseModel):
+    """Request model for creating a system prompt."""
+    name: str
+    prompt_text: str
+    category: str
+    is_default: bool = False
+    variables: Optional[list] = None
+    meta_data: Optional[dict] = None
+
+
+class SystemPromptUpdate(BaseModel):
+    """Request model for updating a system prompt."""
+    name: Optional[str] = None
+    prompt_text: Optional[str] = None
+    category: Optional[str] = None
+    is_default: Optional[bool] = None
+    variables: Optional[list] = None
+    meta_data: Optional[dict] = None
+
+
+@router.get("/system-prompts", dependencies=[Depends(require_api_key)])
+async def list_system_prompts(
+    category: Optional[str] = None,
+    is_template: Optional[bool] = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """List all system prompts with optional filters.
+
+    Args:
+        category: Filter by category
+        is_template: Filter for templates (true) or user prompts (false)
+    """
+    service = SystemPromptService(db)
+    prompts = service.list_prompts(category=category, is_template=is_template)
+
+    return JSONResponse({
+        "prompts": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "prompt_text": p.prompt_text,
+                "category": p.category,
+                "is_default": p.is_default,
+                "is_template": p.is_template,
+                "variables": p.variables,
+                "meta_data": p.meta_data,
+                "created_at": p.created_at.isoformat(),
+                "updated_at": p.updated_at.isoformat(),
+            }
+            for p in prompts
+        ],
+        "total": len(prompts),
+    })
+
+
+@router.get("/system-prompts/templates", dependencies=[Depends(require_api_key)])
+async def list_prompt_templates(
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """List all built-in system prompt templates."""
+    service = SystemPromptService(db)
+    templates = service.list_prompts(is_template=True)
+
+    return JSONResponse({
+        "templates": [
+            {
+                "id": t.id,
+                "name": t.name,
+                "prompt_text": t.prompt_text,
+                "category": t.category,
+                "variables": t.variables,
+                "meta_data": t.meta_data,
+            }
+            for t in templates
+        ],
+        "total": len(templates),
+    })
+
+
+@router.get("/system-prompts/{prompt_id}", dependencies=[Depends(require_api_key)])
+async def get_system_prompt(
+    prompt_id: str,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Get a specific system prompt by ID."""
+    service = SystemPromptService(db)
+    prompt = service.get_prompt(prompt_id)
+
+    if not prompt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"System prompt '{prompt_id}' not found"
+        )
+
+    return JSONResponse({
+        "id": prompt.id,
+        "name": prompt.name,
+        "prompt_text": prompt.prompt_text,
+        "category": prompt.category,
+        "is_default": prompt.is_default,
+        "is_template": prompt.is_template,
+        "variables": prompt.variables,
+        "meta_data": prompt.meta_data,
+        "created_at": prompt.created_at.isoformat(),
+        "updated_at": prompt.updated_at.isoformat(),
+    })
+
+
+@router.post("/system-prompts", dependencies=[Depends(require_api_key)])
+async def create_system_prompt(
+    request: SystemPromptCreate,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Create a new system prompt."""
+    service = SystemPromptService(db)
+
+    try:
+        prompt = service.create_prompt(
+            name=request.name,
+            prompt_text=request.prompt_text,
+            category=request.category,
+            is_default=request.is_default,
+            is_template=False,  # User-created prompts are not templates
+            variables=request.variables,
+            meta_data=request.meta_data,
+        )
+
+        return JSONResponse({
+            "id": prompt.id,
+            "name": prompt.name,
+            "prompt_text": prompt.prompt_text,
+            "category": prompt.category,
+            "is_default": prompt.is_default,
+            "variables": prompt.variables,
+            "created_at": prompt.created_at.isoformat(),
+        }, status_code=status.HTTP_201_CREATED)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create system prompt: {str(e)}"
+        )
+
+
+@router.put("/system-prompts/{prompt_id}", dependencies=[Depends(require_api_key)])
+async def update_system_prompt(
+    prompt_id: str,
+    request: SystemPromptUpdate,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Update a system prompt."""
+    service = SystemPromptService(db)
+
+    try:
+        prompt = service.update_prompt(
+            prompt_id=prompt_id,
+            name=request.name,
+            prompt_text=request.prompt_text,
+            category=request.category,
+            is_default=request.is_default,
+            variables=request.variables,
+            meta_data=request.meta_data,
+        )
+
+        if not prompt:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"System prompt '{prompt_id}' not found"
+            )
+
+        return JSONResponse({
+            "id": prompt.id,
+            "name": prompt.name,
+            "prompt_text": prompt.prompt_text,
+            "category": prompt.category,
+            "is_default": prompt.is_default,
+            "updated_at": prompt.updated_at.isoformat(),
+        })
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update system prompt: {str(e)}"
+        )
+
+
+@router.delete("/system-prompts/{prompt_id}", dependencies=[Depends(require_api_key)])
+async def delete_system_prompt(
+    prompt_id: str,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Delete a system prompt."""
+    service = SystemPromptService(db)
+
+    try:
+        deleted = service.delete_prompt(prompt_id)
+
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"System prompt '{prompt_id}' not found"
+            )
+
+        return JSONResponse({"message": "System prompt deleted successfully"})
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete system prompt: {str(e)}"
+        )
 
 
 # Pydantic models for request/response

@@ -254,3 +254,63 @@ class TurnEvent(Base):
         Index('ix_turn_session_turn', 'session_id', 'turn_id', 'timestamp'),
         Index('ix_turn_event_type', 'event_type', 'created_at'),
     )
+
+
+class SystemPrompt(Base):
+    """System prompts for LLM conversations."""
+    __tablename__ = "system_prompts"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(200), nullable=False)
+    prompt_text = Column(Text, nullable=False)
+    category = Column(String(50), nullable=False)  # customer_support, sales, technical, etc.
+    is_default = Column(Boolean, default=False)
+    is_template = Column(Boolean, default=False)  # Built-in templates vs user-created
+    variables = Column(JSON, default=list)  # List of variable names used in prompt
+    meta_data = Column(JSON, default=dict)  # Additional metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index('ix_prompt_category', 'category'),
+        Index('ix_prompt_is_default', 'is_default'),
+    )
+
+
+class SessionConfiguration(Base):
+    """Session-specific configuration for voice chat."""
+    __tablename__ = "session_configurations"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=True)  # Optional user association
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+
+    # LLM configuration
+    llm_provider = Column(String(50), nullable=False, default="sarvam")
+    llm_model = Column(String(100), nullable=False, default="sarvam-1")
+
+    # TTS configuration
+    tts_provider = Column(String(50), nullable=False, default="sarvam")
+    tts_voice_id = Column(String(100), nullable=False, default="anushka")
+    voice_tuning = Column(JSON, default=dict)  # {pitch: float, pace: float, loudness: float}
+
+    # System prompt
+    system_prompt_id = Column(String, ForeignKey("system_prompts.id"), nullable=True)
+
+    # Other settings
+    optimization_level = Column(String(32), nullable=False, default="balanced")
+    target_language = Column(String(10), nullable=False, default="en-IN")
+    enable_rag = Column(Boolean, default=False)
+
+    # Metadata
+    is_default = Column(Boolean, default=False)
+    meta_data = Column(JSON, default=dict)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index('ix_config_user', 'user_id'),
+        Index('ix_config_is_default', 'is_default'),
+    )
